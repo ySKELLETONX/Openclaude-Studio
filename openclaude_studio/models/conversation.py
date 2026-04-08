@@ -10,11 +10,19 @@ def utc_now() -> str:
 
 
 @dataclass
+class Attachment:
+    path: str
+    name: str
+    kind: str = "file"
+
+
+@dataclass
 class ChatMessage:
     role: str
     content: str
     created_at: str = field(default_factory=utc_now)
     metadata: dict = field(default_factory=dict)
+    attachments: list[Attachment] = field(default_factory=list)
 
 
 @dataclass
@@ -26,12 +34,26 @@ class Conversation:
     openclaude_session_id: str = ""
     messages: list[ChatMessage] = field(default_factory=list)
     event_log: list[dict] = field(default_factory=list)
+    permission_history: list[dict] = field(default_factory=list)
+    pinned: bool = False
+    tags: list[str] = field(default_factory=list)
 
     def touch(self) -> None:
         self.updated_at = utc_now()
 
-    def add_message(self, role: str, content: str, metadata: dict | None = None) -> ChatMessage:
-        message = ChatMessage(role=role, content=content, metadata=metadata or {})
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        metadata: dict | None = None,
+        attachments: list[Attachment] | None = None,
+    ) -> ChatMessage:
+        message = ChatMessage(
+            role=role,
+            content=content,
+            metadata=metadata or {},
+            attachments=list(attachments or []),
+        )
         self.messages.append(message)
         if self.title == "New chat" and role == "user":
             self.title = content.strip()[:48] or "New chat"
@@ -43,7 +65,18 @@ class Conversation:
 
     @classmethod
     def from_dict(cls, payload: dict) -> "Conversation":
-        messages = [ChatMessage(**item) for item in payload.get("messages", [])]
+        messages = []
+        for item in payload.get("messages", []):
+            attachments = [Attachment(**attachment) for attachment in item.get("attachments", [])]
+            messages.append(
+                ChatMessage(
+                    role=item["role"],
+                    content=item.get("content", ""),
+                    created_at=item.get("created_at", utc_now()),
+                    metadata=dict(item.get("metadata", {})),
+                    attachments=attachments,
+                )
+            )
         return cls(
             id=payload["id"],
             title=payload.get("title", "New chat"),
@@ -52,4 +85,7 @@ class Conversation:
             openclaude_session_id=payload.get("openclaude_session_id", ""),
             messages=messages,
             event_log=list(payload.get("event_log", [])),
+            permission_history=list(payload.get("permission_history", [])),
+            pinned=bool(payload.get("pinned", False)),
+            tags=list(payload.get("tags", [])),
         )

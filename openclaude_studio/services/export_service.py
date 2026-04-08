@@ -16,9 +16,17 @@ class ExportService:
 
     def build_markdown(self, conversation: Conversation) -> str:
         lines = [f"# {conversation.title}", ""]
+        if conversation.tags:
+            lines.append(f"Tags: {', '.join(conversation.tags)}")
+            lines.append("")
         for message in conversation.messages:
             lines.append(f"## {message.role.title()}")
             lines.append("")
+            if message.attachments:
+                lines.append("Attachments:")
+                for attachment in message.attachments:
+                    lines.append(f"- {attachment.name}: {attachment.path}")
+                lines.append("")
             lines.append(message.content)
             lines.append("")
         return "\n".join(lines)

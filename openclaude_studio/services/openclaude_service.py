@@ -18,6 +18,7 @@ class RunRequest:
     prompt: str
     conversation: Conversation
     config: OpenClaudeConfig
+    attachments: list[str] | None = None
 
 
 class OpenClaudeRunner(QObject):
@@ -28,6 +29,8 @@ class OpenClaudeRunner(QObject):
     result_ready = pyqtSignal(dict)
     session_initialized = pyqtSignal(str)
     runtime_state_changed = pyqtSignal(dict)
+    permission_requested = pyqtSignal(dict)
+    permission_resolved = pyqtSignal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -39,6 +42,7 @@ class OpenClaudeRunner(QObject):
         self._last_session_id = ""
         self._result_emitted = False
         self._request_config: OpenClaudeConfig | None = None
+        self._pending_permission: dict | None = None
 
     @property
     def is_running(self) -> bool:
@@ -48,6 +52,30 @@ class OpenClaudeRunner(QObject):
         if self._process is not None and self.is_running:
             self.status_changed.emit("Stopping OpenClaude...")
             self._process.kill()
+
+    def respond_to_permission(self, approved: bool, note: str = "") -> None:
+        if self._process is None or not self.is_running:
+            return
+        payload = "y"
+        if not approved:
+            payload = "n"
+        if note.strip():
+            payload = f"{payload} {note.strip()}"
+        payload += "\n"
+        self._process.write(payload.encode("utf-8"))
+        details = dict(self._pending_permission or {})
+        details.update({"approved": approved, "note": note.strip()})
+        self.permission_resolved.emit(details)
+        self.runtime_state_changed.emit(
+            {
+                "status": "running",
+                "provider": self._request_config.provider_name if self._request_config else "Custom",
+                "model": self._request_config.model if self._request_config else "",
+                "workspace": self._request_config.working_directory if self._request_config else str(Path.cwd()),
+                "session_id": self._last_session_id,
+            }
+        )
+        self._pending_permission = None
 
     def start(self, request: RunRequest) -> None:
         if self.is_running:
@@ -60,6 +88,7 @@ class OpenClaudeRunner(QObject):
         self._last_session_id = request.conversation.openclaude_session_id
         self._result_emitted = False
         self._request_config = request.config
+        self._pending_permission = None
 
         process = QProcess(self)
         process.setProgram(request.config.executable)
@@ -138,7 +167,7 @@ class OpenClaudeRunner(QObject):
         self._stderr_buffer += chunk
         if chunk.strip():
             if "permission" in chunk.lower():
-                self.runtime_state_changed.emit({"status": "permission_attention", "details": chunk.strip()})
+                self._emit_permission_request(chunk.strip(), "stderr")
             self.status_changed.emit(chunk.strip())
 
     def _parse_stream_line(self, line: str) -> None:
@@ -188,8 +217,14 @@ class OpenClaudeRunner(QObject):
                 )
             elif subtype in {"hook_progress", "task_progress"}:
                 self.status_changed.emit(payload.get("output") or payload.get("description") or subtype)
+            elif subtype in {"permission_request", "approval_required"}:
+                details = payload.get("output") or payload.get("description") or "OpenClaude requested approval."
+                self._emit_permission_request(details, subtype, payload)
         elif message_type in {"tool_progress", "tool_use_summary"}:
             self.status_changed.emit(payload.get("summary") or payload.get("tool_name", "Tool running"))
+        elif message_type in {"permission_request", "approval_required"}:
+            details = payload.get("output") or payload.get("description") or payload.get("message") or "OpenClaude requested approval."
+            self._emit_permission_request(details, message_type, payload)
 
     def _extract_assistant_text(self, payload: dict) -> str:
         message = payload.get("message", {})
@@ -223,6 +258,23 @@ class OpenClaudeRunner(QObject):
         message = f"Failed to start OpenClaude: {error}"
         self.error_occurred.emit(message)
         self.runtime_state_changed.emit({"status": "error", "details": message, "session_id": self._last_session_id})
+
+    def _emit_permission_request(self, details: str, source: str, payload: dict | None = None) -> None:
+        permission = {
+            "details": details.strip(),
+            "source": source,
+            "session_id": self._last_session_id,
+            "payload": payload or {},
+        }
+        self._pending_permission = permission
+        self.permission_requested.emit(permission)
+        self.runtime_state_changed.emit(
+            {
+                "status": "permission_required",
+                "details": details.strip(),
+                "session_id": self._last_session_id,
+            }
+        )
 
     def _infer_model(self, environment: dict[str, str]) -> str:
         for key in ("OPENAI_MODEL", "ANTHROPIC_MODEL", "GEMINI_MODEL"):

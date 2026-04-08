@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QKeyEvent, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
     QLabel,
     QPushButton,
     QTextBrowser,
@@ -23,10 +25,26 @@ class CodeBlock:
     code: str
 
 
+@dataclass
+class AttachmentPreview:
+    path: str
+    name: str
+    kind: str = "file"
+
+
 class MessageCard(QFrame):
     copy_requested = pyqtSignal(str)
 
-    def __init__(self, role: str, html: str, code_blocks: list[CodeBlock], muted_text: str, parent=None) -> None:
+    def __init__(
+        self,
+        role: str,
+        html: str,
+        code_blocks: list[CodeBlock],
+        muted_text: str,
+        attachments: list[AttachmentPreview] | None = None,
+        footer_text: str = "",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.role = role
         self.code_blocks = code_blocks
@@ -60,6 +78,19 @@ class MessageCard(QFrame):
         body.setMaximumHeight(max(80, int(body.document().size().height()) + 18))
         outer.addWidget(body)
 
+        if attachments:
+            attachment_row = QHBoxLayout()
+            attachment_row.setContentsMargins(0, 0, 0, 0)
+            attachment_row.setSpacing(8)
+            for attachment in attachments:
+                chip = QLabel(attachment.name)
+                chip.setStyleSheet(
+                    f"padding:6px 10px; border-radius:10px; background:rgba(127,127,127,0.10); color:{muted_text};"
+                )
+                attachment_row.addWidget(chip)
+            attachment_row.addStretch()
+            outer.addLayout(attachment_row)
+
         if code_blocks:
             buttons = QHBoxLayout()
             buttons.setContentsMargins(0, 0, 0, 0)
@@ -71,6 +102,12 @@ class MessageCard(QFrame):
                 buttons.addWidget(button)
             buttons.addStretch()
             outer.addLayout(buttons)
+
+        if footer_text.strip():
+            footer = QLabel(footer_text)
+            footer.setWordWrap(True)
+            footer.setStyleSheet(f"font-size:11px; color:{muted_text};")
+            outer.addWidget(footer)
 
     def plain_text(self) -> str:
         pieces = []
@@ -100,6 +137,11 @@ class MessageStreamCard(QFrame):
 
 class PromptEditor(QTextEdit):
     submit_requested = pyqtSignal()
+    files_dropped = pyqtSignal(list)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter} and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
@@ -107,6 +149,49 @@ class PromptEditor(QTextEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        urls = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+        if urls:
+            self.files_dropped.emit(urls)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+
+class AttachmentPreviewList(QListWidget):
+    remove_requested = pyqtSignal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setViewMode(QListWidget.ViewMode.IconMode)
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.setMovement(QListWidget.Movement.Static)
+        self.setSpacing(10)
+        self.setFixedHeight(92)
+
+    def set_attachments(self, attachments: list[AttachmentPreview]) -> None:
+        self.clear()
+        for attachment in attachments:
+            item = QListWidgetItem(attachment.name)
+            item.setData(Qt.ItemDataRole.UserRole, attachment.path)
+            if attachment.kind == "image":
+                pixmap = QPixmap(attachment.path)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        64,
+                        64,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    item.setIcon(QIcon(scaled))
+            self.addItem(item)
 
 
 def copy_to_clipboard(text: str) -> None:

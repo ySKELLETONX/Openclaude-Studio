@@ -89,7 +89,7 @@ QToolBar QToolButton:hover {{
     border: 1px solid {colors["panel_border"]};
     color: {colors["text"]};
 }}
-QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard {{
+QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard, QFrame#PermissionCard {{
     background: {colors["surface"]};
     border: 1px solid {colors["panel_border"]};
     border-radius: 18px;
@@ -193,6 +193,9 @@ QLabel#HeroTitle {{
     color: {colors["text"]};
     font-size: 13pt;
     font-weight: 600;
+}}
+QLabel#MutedBadge {{
+    color: {colors["muted"]};
 }}
 QTabWidget::pane {{
     border: 1px solid {colors["panel_border"]};

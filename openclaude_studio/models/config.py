@@ -40,6 +40,34 @@ class AppearanceConfig:
 class LoggingConfig:
     level: str = "INFO"
     open_log_on_crash: bool = False
+    local_telemetry_enabled: bool = True
+
+
+@dataclass
+class RecoveryConfig:
+    restore_last_session: bool = True
+    restore_draft: bool = True
+
+
+@dataclass
+class GitConfig:
+    enabled: bool = False
+    executable: str = "git"
+    auto_refresh: bool = True
+    workspace_override: str = ""
+
+
+@dataclass
+class LocalizationConfig:
+    language_file: str = "en.US.xml"
+
+
+@dataclass
+class DiscordConfig:
+    enabled: bool = False
+    client_id: str = "1391469843342889010"
+    show_workspace: bool = True
+    show_provider: bool = True
 
 
 @dataclass
@@ -47,6 +75,10 @@ class AppConfig:
     openclaude: OpenClaudeConfig = field(default_factory=OpenClaudeConfig)
     appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    recovery: RecoveryConfig = field(default_factory=RecoveryConfig)
+    git: GitConfig = field(default_factory=GitConfig)
+    localization: LocalizationConfig = field(default_factory=LocalizationConfig)
+    discord: DiscordConfig = field(default_factory=DiscordConfig)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -56,6 +88,10 @@ class AppConfig:
         openclaude = payload.get("openclaude", {})
         appearance = payload.get("appearance", {})
         logging = payload.get("logging", {})
+        recovery = payload.get("recovery", {})
+        git = payload.get("git", {})
+        localization = payload.get("localization", {})
+        discord = payload.get("discord", {})
         return cls(
             openclaude=OpenClaudeConfig(
                 executable=openclaude.get("executable", "openclaude"),
@@ -71,6 +107,10 @@ class AppConfig:
             ),
             appearance=AppearanceConfig(**appearance),
             logging=LoggingConfig(**logging),
+            recovery=RecoveryConfig(**recovery),
+            git=GitConfig(**git),
+            localization=LocalizationConfig(**localization),
+            discord=DiscordConfig(**discord),
         )
 
 
@@ -83,3 +123,7 @@ class AppPaths:
     logs_dir: Path
     crash_dir: Path
     exports_dir: Path
+    recovery_dir: Path
+    session_state_file: Path
+    telemetry_file: Path
+    languages_dir: Path

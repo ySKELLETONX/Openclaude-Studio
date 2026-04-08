@@ -6,6 +6,8 @@ Modern desktop GUI for OpenClaude built with Python and PyQt6.
 
 [English](#english) | [Português do Brasil](#portugues-do-brasil)
 
+![Openclaude Studio hero](assets/github-hero.svg)
+
 </div>
 
 ---
@@ -14,21 +16,27 @@ Modern desktop GUI for OpenClaude built with Python and PyQt6.
 
 Openclaude Studio is a modern desktop GUI for [OpenClaude](https://github.com/Gitlawb/openclaude), built with Python and `PyQt6`.
 
-It brings a Codex / claude.ai inspired experience to OpenClaude with a modern chat interface, persistent conversations, configurable provider integration, transcript export/print, screenshots, and crash-safe logging.
+It brings a Codex / claude.ai inspired experience to OpenClaude with a cleaner desktop workflow, persistent conversations, provider configuration, exports, Git tools, XML language files, Discord Rich Presence, and crash-safe logs.
 
 ### Features
 
 - Modern desktop chat UI inspired by Codex and claude.ai
 - OpenClaude CLI integration using `--print --verbose --output-format stream-json`
-- Persistent local chat history with session resume support
+- Persistent local conversations with session resume support
+- Interactive permission approvals inside the GUI
+- Attachments with drag-and-drop preview
+- Edit prompt, regenerate reply, continue response, duplicate chat
+- Favorites, tags, stronger search, JSON import/export
+- Optional Git integration with branch/status/changed files, stage, commit, pull, push, and branch creation
+- XML language system with `pt_br.xml`, `en.US.xml`, and `Russian.xml`
+- Optional Discord Rich Presence integration
 - Full provider environment configuration
 - OpenClaude print options exposed in the UI
-- Tool and event timeline
-- Markdown / HTML / TXT export
-- Print preview and PDF printing
-- Screenshot capture
-- Rotating logs and crash reports
-- Windows test build with PyInstaller
+- Runtime event timeline
+- Markdown / HTML / TXT / JSON export
+- Print preview and screenshot capture
+- Rotating logs, crash reports, recovery snapshots, and local telemetry
+- Windows build with PyInstaller and optional Inno Setup installer
 
 ### Stack
 
@@ -36,6 +44,7 @@ It brings a Codex / claude.ai inspired experience to OpenClaude with a modern ch
 - `qtawesome`
 - `markdown-it-py`
 - `Pygments`
+- `pypresence`
 
 ### Installation
 
@@ -51,7 +60,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Windows Test Build
+### Windows Build
 
 To generate a test `.exe`:
 
@@ -62,6 +71,7 @@ To generate a test `.exe`:
 Or manually:
 
 ```powershell
+python -m unittest discover -s tests -v
 pip install -r requirements.txt -r requirements-build.txt
 pyinstaller --clean --noconfirm OpenclaudeStudio.spec
 ```
@@ -70,6 +80,12 @@ Expected output:
 
 ```text
 dist/OpenclaudeStudio.exe
+```
+
+If Inno Setup 6 is installed, the project also includes:
+
+```text
+dist/installer/OpenclaudeStudio-Setup.exe
 ```
 
 ### OpenClaude Setup
@@ -96,12 +112,14 @@ The app stores project-local data in `data/`:
 - `data/conversations/*.json`
 - `data/logs/app.log`
 - `data/logs/crashes/*.log`
+- `data/logs/telemetry.jsonl`
 - `data/exports/*`
+- `data/recovery/last_state.json`
 
 ### Notes
 
-- This version focuses on the stable OpenClaude CLI headless flow.
-- The code structure is ready for a future gRPC client if you want to expand beyond CLI integration.
+- This version focuses on the stable OpenClaude CLI headless workflow.
+- The app can run without Git or Discord enabled; both integrations are optional.
 - On the first run of the compiled app, make sure `openclaude` is installed globally or configure the executable path in Settings.
 
 ---
@@ -110,21 +128,27 @@ The app stores project-local data in `data/`:
 
 Openclaude Studio é uma interface desktop moderna para o [OpenClaude](https://github.com/Gitlawb/openclaude), desenvolvida em Python com `PyQt6`.
 
-Ele traz uma experiência inspirada no Codex e no claude.ai para o OpenClaude, com interface de chat moderna, conversas persistentes, integração configurável com providers, exportação/impressão de transcrições, captura de tela e logs com tratamento de crash.
+Ele traz uma experiência inspirada no Codex e no claude.ai para o OpenClaude, com fluxo desktop mais limpo, conversas persistentes, configuração de providers, exportações, ferramentas Git, idiomas em XML, Discord Rich Presence e logs com proteção contra crash.
 
 ### Recursos
 
 - Interface desktop moderna inspirada no Codex e claude.ai
 - Integração com a CLI do OpenClaude usando `--print --verbose --output-format stream-json`
-- Histórico local persistente com suporte a retomada de sessão
-- Configuração completa de providers por variáveis de ambiente
+- Conversas locais persistentes com suporte a retomada de sessão
+- Aprovações interativas de permissões dentro da GUI
+- Anexos com preview e drag-and-drop
+- Editar prompt, regenerar resposta, continuar resposta e duplicar conversa
+- Favoritos, tags, busca mais forte e import/export em JSON
+- Integração opcional com Git para branch, status, arquivos alterados, stage, commit, pull, push e criação de branch
+- Sistema de idiomas em XML com `pt_br.xml`, `en.US.xml` e `Russian.xml`
+- Integração opcional com Discord Rich Presence
+- Configuração completa de providers
 - Opções de print do OpenClaude expostas na interface
-- Linha do tempo de eventos e ferramentas
-- Exportação em Markdown / HTML / TXT
-- Visualização de impressão e geração de PDF
-- Captura de screenshot
-- Logs rotativos e relatórios de crash
-- Build de teste para Windows com PyInstaller
+- Linha do tempo de eventos de execução
+- Exportação em Markdown / HTML / TXT / JSON
+- Preview de impressão e captura de screenshot
+- Logs rotativos, relatórios de crash, recovery de rascunho e telemetria local opcional
+- Build para Windows com PyInstaller e instalador opcional via Inno Setup
 
 ### Tecnologias
 
@@ -132,6 +156,7 @@ Ele traz uma experiência inspirada no Codex e no claude.ai para o OpenClaude, c
 - `qtawesome`
 - `markdown-it-py`
 - `Pygments`
+- `pypresence`
 
 ### Instalação
 
@@ -147,7 +172,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Build de Teste no Windows
+### Build no Windows
 
 Para gerar um `.exe` de teste:
 
@@ -158,6 +183,7 @@ Para gerar um `.exe` de teste:
 Ou manualmente:
 
 ```powershell
+python -m unittest discover -s tests -v
 pip install -r requirements.txt -r requirements-build.txt
 pyinstaller --clean --noconfirm OpenclaudeStudio.spec
 ```
@@ -166,6 +192,12 @@ Saída esperada:
 
 ```text
 dist/OpenclaudeStudio.exe
+```
+
+Se o Inno Setup 6 estiver instalado, o projeto também pode gerar:
+
+```text
+dist/installer/OpenclaudeStudio-Setup.exe
 ```
 
 ### Configuração do OpenClaude
@@ -192,10 +224,12 @@ O app salva dados locais do projeto em `data/`:
 - `data/conversations/*.json`
 - `data/logs/app.log`
 - `data/logs/crashes/*.log`
+- `data/logs/telemetry.jsonl`
 - `data/exports/*`
+- `data/recovery/last_state.json`
 
 ### Observações
 
 - Esta versão foca no fluxo headless estável da CLI do OpenClaude.
-- A estrutura do código já está preparada para um futuro cliente gRPC, caso você queira expandir além da integração por CLI.
+- O app pode funcionar sem Git e sem Discord ativos; ambas as integrações são opcionais.
 - Na primeira execução da versão compilada, garanta que o `openclaude` esteja instalado globalmente ou configure o caminho do executável nas Settings.

@@ -18,6 +18,10 @@ class SettingsService:
             logs_dir=data_dir / "logs",
             crash_dir=data_dir / "logs" / "crashes",
             exports_dir=data_dir / "exports",
+            recovery_dir=data_dir / "recovery",
+            session_state_file=data_dir / "recovery" / "last_state.json",
+            telemetry_file=data_dir / "logs" / "telemetry.jsonl",
+            languages_dir=root / "languages",
         )
         self._ensure_dirs()
         self._config = self.load()
@@ -29,6 +33,8 @@ class SettingsService:
             self.paths.logs_dir,
             self.paths.crash_dir,
             self.paths.exports_dir,
+            self.paths.recovery_dir,
+            self.paths.languages_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

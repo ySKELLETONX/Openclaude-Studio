@@ -10,6 +10,11 @@ a = Analysis(
     binaries=[],
     datas=[
         ('README.md', '.'),
+        ('assets\\openclaude_studio.svg', 'assets'),
+        ('assets\\github-hero.svg', 'assets'),
+        ('languages\\pt_br.xml', 'languages'),
+        ('languages\\en.US.xml', 'languages'),
+        ('languages\\Russian.xml', 'languages'),
     ],
     hiddenimports=[
         'qtawesome',
@@ -43,4 +48,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='assets\\openclaude_studio.ico',
+    version='assets\\windows_version_info.txt',
 )

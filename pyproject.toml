@@ -1,7 +1,7 @@
 [project]
 name = "openclaude-studio"
-version = "0.1.0"
-description = "Modern PySide6 desktop UI for OpenClaude"
+version = "0.2.0"
+description = "Modern PyQt6 desktop GUI for OpenClaude"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,3 +15,6 @@ dependencies = [
 build = [
   "pyinstaller>=6.11",
 ]
+
+[tool.unittest]
+testpaths = ["tests"]

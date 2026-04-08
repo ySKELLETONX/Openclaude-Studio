@@ -5,7 +5,7 @@ from pathlib import Path
 
 import qtawesome as qta
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices, QGuiApplication
+from PyQt6.QtGui import QAction, QCloseEvent, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QFrame,
     QFileDialog,
@@ -28,11 +28,16 @@ from PyQt6.QtWidgets import (
 
 from openclaude_studio.models.conversation import Attachment, ChatMessage, Conversation
 from openclaude_studio.services.conversation_service import ConversationService
+from openclaude_studio.services.discord_presence_service import DiscordPresenceService
 from openclaude_studio.services.export_service import ExportService
+from openclaude_studio.services.git_service import GitRepoStatus, GitService
+from openclaude_studio.services.language_service import LanguageService
 from openclaude_studio.services.logging_service import get_logger
 from openclaude_studio.services.openclaude_service import OpenClaudeRunner, RunRequest
+from openclaude_studio.services.recovery_service import RecoveryService
 from openclaude_studio.services.render_service import RenderService
 from openclaude_studio.services.settings_service import SettingsService
+from openclaude_studio.services.telemetry_service import TelemetryService
 from openclaude_studio.ui.chat_widgets import (
     AttachmentPreview,
     AttachmentPreviewList,
@@ -47,23 +52,35 @@ from openclaude_studio.ui.theme import build_stylesheet, theme_colors
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings_service: SettingsService) -> None:
+    def __init__(
+        self,
+        settings_service: SettingsService,
+        language_service: LanguageService,
+        telemetry: TelemetryService | None = None,
+        discord_presence: DiscordPresenceService | None = None,
+    ) -> None:
         super().__init__()
         self.settings_service = settings_service
         self.config = settings_service.config
+        self.language_service = language_service
         self.logger = get_logger(__name__)
+        self.telemetry = telemetry
+        self.discord_presence = discord_presence
         self.conversation_service = ConversationService(settings_service.paths.conversations_dir)
         self.export_service = ExportService(settings_service.paths.exports_dir)
         self.render_service = RenderService()
+        self.recovery_service = RecoveryService(settings_service.paths.session_state_file)
+        self.git_service = GitService()
         self.runner = OpenClaudeRunner()
         self.current_conversation = Conversation()
         self._colors = theme_colors(self.config.appearance.theme)
         self._stream_card: MessageStreamCard | None = None
         self._runtime_state: dict = {"status": "idle"}
+        self._git_status = GitRepoStatus(available=True, repo_found=False, summary=self._l("panel.git.disabled", "Git integration disabled."))
         self._pending_permission: dict | None = None
         self._pending_attachments: list[Attachment] = []
 
-        self.setWindowTitle("Openclaude Studio")
+        self.setWindowTitle(self._l("app.title", "Openclaude Studio"))
         self.resize(1600, 960)
 
         self._build_toolbar()
@@ -71,52 +88,99 @@ class MainWindow(QMainWindow):
         self._wire_runner()
         self._apply_theme()
         self._load_conversations()
+        self.composer.textChanged.connect(self._persist_recovery_snapshot)
+        self._restore_recovery_snapshot()
         self._show_conversation(self.current_conversation)
+
+    def _l(self, key: str, fallback: str) -> str:
+        return self.language_service.t(key, fallback)
+
+    def _update_presence_idle(self) -> None:
+        if self.discord_presence is None:
+            return
+        self.discord_presence.config = self.config.discord
+        self.discord_presence.set_idle(
+            self.current_conversation.title,
+            workspace=self.config.openclaude.working_directory or str(Path.cwd()),
+            provider=self.config.openclaude.provider_name,
+        )
+
+    def _update_presence_running(self) -> None:
+        if self.discord_presence is None:
+            return
+        self.discord_presence.config = self.config.discord
+        self.discord_presence.set_running(
+            self.current_conversation.title,
+            workspace=self.config.openclaude.working_directory or str(Path.cwd()),
+            provider=self.config.openclaude.provider_name,
+        )
+
+    def _update_presence_approval(self) -> None:
+        if self.discord_presence is None:
+            return
+        self.discord_presence.config = self.config.discord
+        self.discord_presence.set_waiting_approval(
+            self.current_conversation.title,
+            workspace=self.config.openclaude.working_directory or str(Path.cwd()),
+            provider=self.config.openclaude.provider_name,
+        )
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        new_action = QAction(qta.icon("fa6s.plus"), "New Chat", self)
+        new_action = QAction(qta.icon("fa6s.plus"), self._l("toolbar.new_chat", "New Chat"), self)
         new_action.triggered.connect(self.new_chat)
-        import_action = QAction(qta.icon("fa6s.file-import"), "Import Chat", self)
+        import_action = QAction(qta.icon("fa6s.file-import"), self._l("toolbar.import_chat", "Import Chat"), self)
         import_action.triggered.connect(self.import_chat)
-        duplicate_action = QAction(qta.icon("fa6s.copy"), "Duplicate", self)
+        duplicate_action = QAction(qta.icon("fa6s.copy"), self._l("toolbar.duplicate", "Duplicate"), self)
         duplicate_action.triggered.connect(self.duplicate_current_chat)
-        pin_action = QAction(qta.icon("fa6s.star"), "Pin", self)
+        pin_action = QAction(qta.icon("fa6s.star"), self._l("toolbar.pin", "Pin"), self)
         pin_action.triggered.connect(self.toggle_pin_current_chat)
-        tags_action = QAction(qta.icon("fa6s.tags"), "Tags", self)
+        tags_action = QAction(qta.icon("fa6s.tags"), self._l("toolbar.tags", "Tags"), self)
         tags_action.triggered.connect(self.edit_tags)
-        attach_action = QAction(qta.icon("fa6s.paperclip"), "Attach Files", self)
+        attach_action = QAction(qta.icon("fa6s.paperclip"), self._l("toolbar.attach", "Attach Files"), self)
         attach_action.triggered.connect(self.attach_files)
-        edit_last_action = QAction(qta.icon("fa6s.pen-to-square"), "Edit Last Prompt", self)
+        edit_last_action = QAction(qta.icon("fa6s.pen-to-square"), self._l("toolbar.edit_last", "Edit Last Prompt"), self)
         edit_last_action.triggered.connect(self.edit_last_prompt)
-        regenerate_action = QAction(qta.icon("fa6s.rotate-right"), "Regenerate", self)
+        regenerate_action = QAction(qta.icon("fa6s.rotate-right"), self._l("toolbar.regenerate", "Regenerate"), self)
         regenerate_action.triggered.connect(self.regenerate_last_reply)
-        continue_action = QAction(qta.icon("fa6s.play"), "Continue", self)
+        continue_action = QAction(qta.icon("fa6s.play"), self._l("toolbar.continue", "Continue"), self)
         continue_action.triggered.connect(self.continue_last_reply)
-        settings_action = QAction(qta.icon("fa6s.gear"), "Settings", self)
+        git_refresh_action = QAction(qta.icon("fa6s.code-branch"), self._l("toolbar.refresh_git", "Refresh Git"), self)
+        git_refresh_action.triggered.connect(self.refresh_git_status)
+        git_stage_action = QAction(qta.icon("fa6s.layer-group"), self._l("toolbar.stage_all", "Stage All"), self)
+        git_stage_action.triggered.connect(self.git_stage_all)
+        git_commit_action = QAction(qta.icon("fa6s.check"), self._l("toolbar.commit", "Commit"), self)
+        git_commit_action.triggered.connect(self.git_commit)
+        git_branch_action = QAction(qta.icon("fa6s.code-branch"), self._l("toolbar.new_branch", "New Branch"), self)
+        git_branch_action.triggered.connect(self.git_create_branch)
+        git_pull_action = QAction(qta.icon("fa6s.download"), self._l("toolbar.pull", "Pull"), self)
+        git_pull_action.triggered.connect(self.git_pull)
+        git_push_action = QAction(qta.icon("fa6s.upload"), self._l("toolbar.push", "Push"), self)
+        git_push_action.triggered.connect(self.git_push)
+        settings_action = QAction(qta.icon("fa6s.gear"), self._l("toolbar.settings", "Settings"), self)
         settings_action.triggered.connect(self.open_settings)
-        rename_action = QAction(qta.icon("fa6s.pen"), "Rename Chat", self)
+        rename_action = QAction(qta.icon("fa6s.pen"), self._l("toolbar.rename", "Rename Chat"), self)
         rename_action.triggered.connect(self.rename_current_chat)
-        delete_action = QAction(qta.icon("fa6s.trash"), "Delete Chat", self)
+        delete_action = QAction(qta.icon("fa6s.trash"), self._l("toolbar.delete", "Delete Chat"), self)
         delete_action.triggered.connect(self.delete_current_chat)
-        export_action = QAction(qta.icon("fa6s.file-export"), "Export", self)
+        export_action = QAction(qta.icon("fa6s.file-export"), self._l("toolbar.export", "Export"), self)
         export_action.triggered.connect(self.export_chat)
-        print_action = QAction(qta.icon("fa6s.print"), "Print", self)
+        print_action = QAction(qta.icon("fa6s.print"), self._l("toolbar.print", "Print"), self)
         print_action.triggered.connect(self.print_chat)
-        screenshot_action = QAction(qta.icon("fa6s.camera"), "Screenshot", self)
+        screenshot_action = QAction(qta.icon("fa6s.camera"), self._l("toolbar.screenshot", "Screenshot"), self)
         screenshot_action.triggered.connect(self.capture_screenshot)
-        copy_last_action = QAction(qta.icon("fa6s.copy"), "Copy Last Reply", self)
+        copy_last_action = QAction(qta.icon("fa6s.copy"), self._l("toolbar.copy_last_reply", "Copy Last Reply"), self)
         copy_last_action.triggered.connect(self.copy_last_assistant_message)
-        copy_code_action = QAction(qta.icon("fa6s.code"), "Copy Last Code Block", self)
+        copy_code_action = QAction(qta.icon("fa6s.code"), self._l("toolbar.copy_last_code", "Copy Last Code Block"), self)
         copy_code_action.triggered.connect(self.copy_last_code_block)
         self.theme_toggle_action = QAction(self)
         self.theme_toggle_action.triggered.connect(self.toggle_theme)
-        logs_action = QAction(qta.icon("fa6s.folder-open"), "Open Logs", self)
+        logs_action = QAction(qta.icon("fa6s.folder-open"), self._l("toolbar.open_logs", "Open Logs"), self)
         logs_action.triggered.connect(self.open_logs_folder)
-        exports_action = QAction(qta.icon("fa6s.box-archive"), "Open Exports", self)
+        exports_action = QAction(qta.icon("fa6s.box-archive"), self._l("toolbar.open_exports", "Open Exports"), self)
         exports_action.triggered.connect(self.open_exports_folder)
 
         for action in (
@@ -132,6 +196,13 @@ class MainWindow(QMainWindow):
             edit_last_action,
             regenerate_action,
             continue_action,
+            None,
+            git_refresh_action,
+            git_stage_action,
+            git_commit_action,
+            git_branch_action,
+            git_pull_action,
+            git_push_action,
             None,
             settings_action,
             None,
@@ -176,12 +247,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel("Topics")
+        title = QLabel(self._l("sidebar.title", "Topics"))
         title.setObjectName("SectionTitle")
         layout.addWidget(title)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search title, tags, content...")
+        self.search_edit.setPlaceholderText(self._l("sidebar.search", "Search title, tags, content..."))
         self.search_edit.textChanged.connect(self._refresh_sidebar)
         layout.addWidget(self.search_edit)
 
@@ -192,10 +263,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.sidebar_list, 1)
 
         button_row = QHBoxLayout()
-        new_button = QPushButton("New topic")
+        new_button = QPushButton(self._l("sidebar.new_topic", "New topic"))
         new_button.setProperty("accent", True)
         new_button.clicked.connect(self.new_chat)
-        reload_button = QPushButton("Pin")
+        reload_button = QPushButton(self._l("sidebar.pin", "Pin"))
         reload_button.setProperty("secondary", True)
         reload_button.clicked.connect(self.toggle_pin_current_chat)
         button_row.addWidget(new_button)
@@ -218,9 +289,9 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         left = QVBoxLayout()
         left.setSpacing(4)
-        self.title_label = QLabel("Openclaude Studio")
+        self.title_label = QLabel(self._l("app.title", "Openclaude Studio"))
         self.title_label.setObjectName("HeroTitle")
-        self.subtitle_label = QLabel("A clean desktop workspace for OpenClaude")
+        self.subtitle_label = QLabel(self._l("window.subtitle", "A clean desktop workspace for OpenClaude"))
         self.subtitle_label.setObjectName("MutedLabel")
         left.addWidget(self.title_label)
         left.addWidget(self.subtitle_label)
@@ -234,11 +305,11 @@ class MainWindow(QMainWindow):
 
         meta = QHBoxLayout()
         meta.setSpacing(16)
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel(self._l("status.ready", "Ready"))
         self.status_label.setObjectName("MutedLabel")
-        self.session_label = QLabel("Session: not started")
+        self.session_label = QLabel(self._l("status.session_not_started", "Session: not started"))
         self.session_label.setObjectName("MutedLabel")
-        self.chat_mode_label = QLabel("Mode: standard")
+        self.chat_mode_label = QLabel(self._l("status.mode_standard", "Mode: standard"))
         self.chat_mode_label.setObjectName("MutedLabel")
         meta.addWidget(self.status_label)
         meta.addWidget(self.session_label)
@@ -265,14 +336,14 @@ class MainWindow(QMainWindow):
         composer_layout.setSpacing(10)
 
         composer_title_row = QHBoxLayout()
-        composer_title = QLabel("Composer")
+        composer_title = QLabel(self._l("chat.composer", "Composer"))
         composer_title.setObjectName("SectionTitle")
         composer_title_row.addWidget(composer_title)
         composer_title_row.addStretch()
-        attach_button = QPushButton("Attach")
+        attach_button = QPushButton(self._l("chat.attach", "Attach"))
         attach_button.setProperty("secondary", True)
         attach_button.clicked.connect(self.attach_files)
-        clear_attachments_button = QPushButton("Clear attachments")
+        clear_attachments_button = QPushButton(self._l("chat.clear_attachments", "Clear attachments"))
         clear_attachments_button.setProperty("secondary", True)
         clear_attachments_button.clicked.connect(self.clear_attachments)
         composer_title_row.addWidget(attach_button)
@@ -284,7 +355,7 @@ class MainWindow(QMainWindow):
         composer_layout.addWidget(self.attachment_list)
 
         self.composer = PromptEditor()
-        self.composer.setPlaceholderText("Describe the task, mention files, or drag attachments here...")
+        self.composer.setPlaceholderText(self._l("chat.placeholder", "Describe the task, mention files, or drag attachments here..."))
         self.composer.setFixedHeight(142)
         self.composer.submit_requested.connect(self.send_prompt)
         self.composer.files_dropped.connect(self._handle_dropped_files)
@@ -301,10 +372,10 @@ class MainWindow(QMainWindow):
         actions.addWidget(self.workspace_label)
         actions.addStretch()
 
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton(self._l("chat.stop", "Stop"))
         self.stop_button.setProperty("danger", True)
         self.stop_button.clicked.connect(self.runner.stop)
-        self.send_button = QPushButton("Send to OpenClaude")
+        self.send_button = QPushButton(self._l("chat.send", "Send to OpenClaude"))
         self.send_button.setProperty("accent", True)
         self.send_button.clicked.connect(self.send_prompt)
         actions.addWidget(self.stop_button)
@@ -320,7 +391,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        title = QLabel("Session")
+        title = QLabel(self._l("panel.session", "Session"))
         title.setObjectName("SectionTitle")
         layout.addWidget(title)
 
@@ -348,15 +419,15 @@ class MainWindow(QMainWindow):
         permission_layout = QVBoxLayout(self.permission_card)
         permission_layout.setContentsMargins(12, 12, 12, 12)
         permission_layout.setSpacing(8)
-        permission_title = QLabel("Permissions")
+        permission_title = QLabel(self._l("panel.permissions", "Permissions"))
         permission_title.setObjectName("SectionTitle")
-        self.permission_status_label = QLabel("No approval needed right now.")
+        self.permission_status_label = QLabel(self._l("panel.permission_idle", "No approval needed right now."))
         self.permission_status_label.setObjectName("MutedLabel")
         permission_actions = QHBoxLayout()
-        self.permission_approve_button = QPushButton("Approve")
+        self.permission_approve_button = QPushButton(self._l("panel.approve", "Approve"))
         self.permission_approve_button.setProperty("accent", True)
         self.permission_approve_button.clicked.connect(lambda: self._respond_to_permission(True))
-        self.permission_reject_button = QPushButton("Reject")
+        self.permission_reject_button = QPushButton(self._l("panel.reject", "Reject"))
         self.permission_reject_button.setProperty("danger", True)
         self.permission_reject_button.clicked.connect(lambda: self._respond_to_permission(False))
         permission_actions.addWidget(self.permission_approve_button)
@@ -366,17 +437,50 @@ class MainWindow(QMainWindow):
         permission_layout.addLayout(permission_actions)
         layout.addWidget(self.permission_card)
 
-        history_title = QLabel("Permission History")
+        history_title = QLabel(self._l("panel.permission_history", "Permission History"))
         history_title.setObjectName("SectionTitle")
         layout.addWidget(history_title)
         self.permission_history_list = QListWidget()
         layout.addWidget(self.permission_history_list, 1)
 
+        git_title = QLabel(self._l("panel.git", "Git"))
+        git_title.setObjectName("SectionTitle")
+        layout.addWidget(git_title)
+        self.git_branch_label = QLabel(self._l("panel.git.branch_unavailable", "Branch: unavailable"))
+        self.git_branch_label.setObjectName("MutedLabel")
+        self.git_tracking_label = QLabel(self._l("panel.git.remote_unavailable", "Remote: unavailable"))
+        self.git_tracking_label.setObjectName("MutedLabel")
+        self.git_summary_label = QLabel(self._l("panel.git.disabled", "Git integration disabled."))
+        self.git_summary_label.setObjectName("MutedLabel")
+        layout.addWidget(self.git_branch_label)
+        layout.addWidget(self.git_tracking_label)
+        layout.addWidget(self.git_summary_label)
+        git_buttons = QHBoxLayout()
+        git_refresh_button = QPushButton(self._l("panel.git.refresh", "Refresh Git"))
+        git_refresh_button.setProperty("secondary", True)
+        git_refresh_button.clicked.connect(self.refresh_git_status)
+        git_stage_button = QPushButton(self._l("panel.git.stage", "Stage"))
+        git_stage_button.setProperty("secondary", True)
+        git_stage_button.clicked.connect(self.git_stage_all)
+        git_commit_button = QPushButton(self._l("toolbar.commit", "Commit"))
+        git_commit_button.setProperty("secondary", True)
+        git_commit_button.clicked.connect(self.git_commit)
+        git_branch_button = QPushButton(self._l("panel.git.branch", "Branch"))
+        git_branch_button.setProperty("secondary", True)
+        git_branch_button.clicked.connect(self.git_create_branch)
+        git_buttons.addWidget(git_refresh_button)
+        git_buttons.addWidget(git_stage_button)
+        git_buttons.addWidget(git_commit_button)
+        git_buttons.addWidget(git_branch_button)
+        layout.addLayout(git_buttons)
+        self.git_files_list = QListWidget()
+        layout.addWidget(self.git_files_list, 1)
+
         row = QHBoxLayout()
-        clear_button = QPushButton("Clear events")
+        clear_button = QPushButton(self._l("panel.clear_events", "Clear events"))
         clear_button.setProperty("secondary", True)
         clear_button.clicked.connect(self.clear_event_view)
-        copy_button = QPushButton("Copy events")
+        copy_button = QPushButton(self._l("panel.copy_events", "Copy events"))
         copy_button.setProperty("secondary", True)
         copy_button.clicked.connect(self.copy_events)
         row.addWidget(clear_button)
@@ -384,7 +488,7 @@ class MainWindow(QMainWindow):
         row.addStretch()
         layout.addLayout(row)
 
-        events_title = QLabel("Runtime Events")
+        events_title = QLabel(self._l("panel.runtime_events", "Runtime Events"))
         events_title.setObjectName("SectionTitle")
         layout.addWidget(events_title)
 
@@ -427,7 +531,7 @@ class MainWindow(QMainWindow):
 
     def _show_conversation(self, conversation: Conversation) -> None:
         self.title_label.setText(f"{'★ ' if conversation.pinned else ''}{conversation.title}")
-        self.subtitle_label.setText("Session-ready workspace with prompts, attachments, and runtime history")
+        self.subtitle_label.setText(self._l("window.subtitle.session", "Session-ready workspace with prompts, attachments, and runtime history"))
         session_text = conversation.openclaude_session_id or "not started"
         self.session_label.setText(f"Session: {session_text}")
         self.tags_badge.setText(f"Tags: {', '.join(conversation.tags)}" if conversation.tags else "")
@@ -443,6 +547,10 @@ class MainWindow(QMainWindow):
             self.permission_history_list.addItem(f"{verdict}: {entry.get('details', 'permission request')}")
         self._update_event_summary()
         self._refresh_session_panel()
+        self._persist_recovery_snapshot()
+        self._maybe_refresh_git_status()
+        if not self.runner.is_running and self._pending_permission is None:
+            self._update_presence_idle()
 
     def new_chat(self) -> None:
         self.current_conversation = Conversation()
@@ -473,6 +581,7 @@ class MainWindow(QMainWindow):
         self._show_conversation(self.current_conversation)
         self._refresh_sidebar()
         self._show_stream_card()
+        self._update_presence_running()
 
         request = RunRequest(
             prompt=composed_prompt,
@@ -576,16 +685,19 @@ class MainWindow(QMainWindow):
     def _handle_permission_requested(self, permission: dict) -> None:
         self._pending_permission = permission
         self.permission_status_label.setText(permission.get("details", "OpenClaude requested approval."))
-        self.chat_mode_label.setText("Mode: waiting for approval")
+        self.chat_mode_label.setText(self._l("status.mode_approval", "Mode: waiting for approval"))
         self._refresh_session_panel()
+        self._update_presence_approval()
 
     def _handle_permission_resolved(self, permission: dict) -> None:
         self._pending_permission = None
         self.current_conversation.permission_history.append(permission)
         self.conversation_service.save(self.current_conversation)
-        self.permission_status_label.setText("Approval sent to OpenClaude.")
-        self.chat_mode_label.setText("Mode: resumed after approval")
+        self.permission_status_label.setText(self._l("panel.permission_idle", "No approval needed right now."))
+        self.chat_mode_label.setText(self._l("status.mode_resumed", "Mode: resumed after approval"))
         self._show_conversation(self.current_conversation)
+        self._persist_recovery_snapshot()
+        self._update_presence_running()
 
     def _respond_to_permission(self, approved: bool) -> None:
         if not self._pending_permission:
@@ -616,6 +728,139 @@ class MainWindow(QMainWindow):
             if conversation.id == self.current_conversation.id:
                 self.sidebar_list.setCurrentRow(self.sidebar_list.count() - 1)
 
+    def _restore_recovery_snapshot(self) -> None:
+        if not self.config.recovery.restore_last_session:
+            return
+        state = self.recovery_service.load_state()
+        if not state:
+            return
+        conversation_id = state.get("conversation_id")
+        if conversation_id:
+            for conversation in self.conversation_service.list_conversations():
+                if conversation.id == conversation_id:
+                    self.current_conversation = conversation
+                    break
+        if self.config.recovery.restore_draft:
+            self.composer.setPlainText(state.get("draft", ""))
+            attachments = []
+            for payload in state.get("attachments", []):
+                try:
+                    attachment = Attachment(**payload)
+                except TypeError:
+                    continue
+                if Path(attachment.path).exists():
+                    attachments.append(attachment)
+            self._pending_attachments = attachments
+            self._refresh_attachment_preview()
+
+    def _persist_recovery_snapshot(self) -> None:
+        attachments = [
+            {"path": attachment.path, "name": attachment.name, "kind": attachment.kind}
+            for attachment in self._pending_attachments
+        ]
+        self.recovery_service.save_state(
+            self.current_conversation.id,
+            self.composer.toPlainText(),
+            attachments,
+        )
+
+    def _git_workspace(self) -> str:
+        return self.config.git.workspace_override or self.config.openclaude.working_directory or str(Path.cwd())
+
+    def _maybe_refresh_git_status(self) -> None:
+        if self.config.git.enabled and self.config.git.auto_refresh:
+            self.refresh_git_status()
+        elif not self.config.git.enabled:
+            self._git_status = GitRepoStatus(available=True, repo_found=False, summary=self._l("panel.git.disabled", "Git integration disabled."))
+            self._refresh_git_panel()
+
+    def refresh_git_status(self) -> None:
+        if not self.config.git.enabled:
+            self.status_label.setText(self._l("panel.git.disabled", "Git integration disabled."))
+            self._git_status = GitRepoStatus(available=True, repo_found=False, summary=self._l("panel.git.disabled", "Git integration disabled."))
+            self._refresh_git_panel()
+            return
+        self._git_status = self.git_service.status(self._git_workspace(), self.config.git.executable)
+        self._refresh_git_panel()
+        self.status_label.setText(self._git_status.summary)
+
+    def _refresh_git_panel(self) -> None:
+        status = self._git_status
+        self.git_files_list.clear()
+        if not self.config.git.enabled:
+            self.git_branch_label.setText(self._l("panel.git.branch_unavailable", "Branch: unavailable"))
+            self.git_tracking_label.setText(self._l("panel.git.remote_unavailable", "Remote: unavailable"))
+            self.git_summary_label.setText(self._l("panel.git.disabled", "Git integration disabled."))
+            return
+        branch = status.branch or "unknown"
+        tracking = status.tracking or "no upstream"
+        ahead = f" ({status.ahead_behind})" if status.ahead_behind else ""
+        self.git_branch_label.setText(f"Branch: {branch}")
+        self.git_tracking_label.setText(f"Remote: {tracking}{ahead}")
+        self.git_summary_label.setText(status.summary if not status.error else f"{status.summary} {status.error}")
+        for item in status.files[:200]:
+            self.git_files_list.addItem(f"{item.code} {item.path}")
+
+    def git_stage_all(self) -> None:
+        ok, message = self.git_service.stage_all(self._git_workspace(), self.config.git.executable)
+        self.status_label.setText(message)
+        if not ok:
+            self._show_error(message)
+            return
+        self.refresh_git_status()
+
+    def git_unstage_all(self) -> None:
+        ok, message = self.git_service.unstage_all(self._git_workspace(), self.config.git.executable)
+        self.status_label.setText(message)
+        if not ok:
+            self._show_error(message)
+            return
+        self.refresh_git_status()
+
+    def git_commit(self) -> None:
+        if not self.config.git.enabled:
+            self.status_label.setText("Enable Git integration first")
+            return
+        message, ok = QInputDialog.getText(self, "Git commit", "Commit message:")
+        if not ok or not message.strip():
+            return
+        ok, result = self.git_service.commit(self._git_workspace(), message.strip(), self.config.git.executable)
+        self.status_label.setText(result)
+        if not ok:
+            self._show_error(result)
+            return
+        self.refresh_git_status()
+
+    def git_create_branch(self) -> None:
+        if not self.config.git.enabled:
+            self.status_label.setText("Enable Git integration first")
+            return
+        branch_name, ok = QInputDialog.getText(self, "New Git branch", "Branch name:")
+        if not ok or not branch_name.strip():
+            return
+        ok, result = self.git_service.create_branch(self._git_workspace(), branch_name.strip(), self.config.git.executable)
+        self.status_label.setText(result)
+        if not ok:
+            self._show_error(result)
+            return
+        self.refresh_git_status()
+
+    def git_pull(self) -> None:
+        ok, message = self.git_service.pull(self._git_workspace(), self.config.git.executable)
+        self.status_label.setText(message)
+        if not ok:
+            self._show_error(message)
+            return
+        self.refresh_git_status()
+
+    def git_push(self) -> None:
+        ok, message = self.git_service.push(self._git_workspace(), self.config.git.executable)
+        self.status_label.setText(message)
+        if not ok:
+            self._show_error(message)
+            return
+        self.refresh_git_status()
+
     def _update_event_summary(self) -> None:
         total = len(self.current_conversation.event_log)
         if total == 0:
@@ -625,13 +870,17 @@ class MainWindow(QMainWindow):
         self.event_summary_label.setText(f"{total} events captured • latest: {last_type}")
 
     def open_settings(self) -> None:
-        dialog = SettingsDialog(self.config, self)
+        dialog = SettingsDialog(self.config, self.language_service, self)
         if dialog.exec():
             self.config = dialog.apply()
+            self.language_service.set_language(self.config.localization.language_file)
             self.settings_service.save(self.config)
             self.workspace_label.setText(self.config.openclaude.working_directory or str(Path.cwd()))
+            self.setWindowTitle(self._l("app.title", "Openclaude Studio"))
             self._apply_theme()
             self._show_conversation(self.current_conversation)
+            self.refresh_git_status()
+            self._update_presence_idle()
 
     def export_chat(self) -> None:
         if not self.current_conversation.messages:
@@ -777,6 +1026,7 @@ class MainWindow(QMainWindow):
             existing.add(str(path))
         self._refresh_attachment_preview()
         self.status_label.setText(f"{len(self._pending_attachments)} attachment(s) ready")
+        self._persist_recovery_snapshot()
 
     def _refresh_attachment_preview(self) -> None:
         previews = [
@@ -789,11 +1039,14 @@ class MainWindow(QMainWindow):
         target = item.data(Qt.ItemDataRole.UserRole)
         self._pending_attachments = [attachment for attachment in self._pending_attachments if attachment.path != target]
         self._refresh_attachment_preview()
+        self._persist_recovery_snapshot()
 
     def clear_attachments(self) -> None:
         self._pending_attachments.clear()
         if hasattr(self, "attachment_list"):
             self.attachment_list.clear()
+        if hasattr(self, "composer"):
+            self._persist_recovery_snapshot()
 
     def open_logs_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.settings_service.paths.logs_dir)))
@@ -854,7 +1107,9 @@ class MainWindow(QMainWindow):
     def _refresh_theme_action(self) -> None:
         is_dark = self.config.appearance.theme == "dark"
         self.theme_toggle_action.setIcon(qta.icon("fa6s.sun") if is_dark else qta.icon("fa6s.moon"))
-        self.theme_toggle_action.setText("Light Mode" if is_dark else "Dark Mode")
+        self.theme_toggle_action.setText(
+            self._l("toolbar.light_mode", "Light Mode") if is_dark else self._l("toolbar.dark_mode", "Dark Mode")
+        )
 
     def _open_sidebar_context_menu(self, position) -> None:
         item = self.sidebar_list.itemAt(position)
@@ -917,6 +1172,13 @@ class MainWindow(QMainWindow):
     def _handle_runtime_state_changed(self, state: dict) -> None:
         self._runtime_state = state
         self._refresh_session_panel()
+        status = state.get("status", "")
+        if status == "permission_required":
+            self._update_presence_approval()
+        elif status in {"running", "connected"}:
+            self._update_presence_running()
+        elif status in {"idle", "error"}:
+            self._update_presence_idle()
 
     def _refresh_session_panel(self) -> None:
         provider = self._runtime_state.get("provider") or self.config.openclaude.provider_name or "Custom"
@@ -947,6 +1209,15 @@ class MainWindow(QMainWindow):
     def _show_error(self, message: str) -> None:
         self.logger.error(message)
         self._hide_stream_card()
+        if self.telemetry is not None:
+            self.telemetry.record_error(
+                "main_window",
+                message,
+                {
+                    "conversation_id": self.current_conversation.id,
+                    "session_id": self.current_conversation.openclaude_session_id,
+                },
+            )
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("OpenClaude Error")
@@ -954,3 +1225,9 @@ class MainWindow(QMainWindow):
         box.setInformativeText(message[:300])
         box.setDetailedText(message)
         box.exec()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._persist_recovery_snapshot()
+        if self.discord_presence is not None:
+            self.discord_presence.disconnect()
+        super().closeEvent(event)

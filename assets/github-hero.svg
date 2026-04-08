@@ -1,0 +1,29 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="640" rx="40" fill="#0C1117"/>
+  <rect x="24" y="24" width="1232" height="592" rx="28" fill="#121923" stroke="#26364A" stroke-width="2"/>
+  <rect x="56" y="72" width="248" height="496" rx="24" fill="#101720"/>
+  <rect x="336" y="72" width="632" height="496" rx="24" fill="#121923"/>
+  <rect x="992" y="72" width="232" height="496" rx="24" fill="#121923"/>
+  <rect x="80" y="112" width="136" height="18" rx="9" fill="#C8D1DC" fill-opacity="0.9"/>
+  <rect x="80" y="156" width="180" height="14" rx="7" fill="#8A96A3"/>
+  <rect x="80" y="188" width="168" height="14" rx="7" fill="#8A96A3"/>
+  <rect x="80" y="220" width="144" height="14" rx="7" fill="#8A96A3"/>
+  <rect x="368" y="108" width="220" height="20" rx="10" fill="#C8D1DC"/>
+  <rect x="368" y="150" width="352" height="12" rx="6" fill="#8A96A3"/>
+  <rect x="368" y="194" width="520" height="128" rx="20" fill="#17324D"/>
+  <rect x="392" y="222" width="156" height="16" rx="8" fill="#C8D1DC"/>
+  <rect x="392" y="254" width="428" height="12" rx="6" fill="#C8D1DC" fill-opacity="0.7"/>
+  <rect x="392" y="282" width="396" height="12" rx="6" fill="#C8D1DC" fill-opacity="0.7"/>
+  <rect x="368" y="350" width="456" height="150" rx="20" fill="#121B25" stroke="#26364A" stroke-width="2"/>
+  <rect x="392" y="378" width="130" height="14" rx="7" fill="#4AA3FF"/>
+  <rect x="392" y="414" width="388" height="12" rx="6" fill="#8A96A3"/>
+  <rect x="392" y="442" width="364" height="12" rx="6" fill="#8A96A3"/>
+  <rect x="1016" y="112" width="112" height="18" rx="9" fill="#C8D1DC"/>
+  <rect x="1016" y="160" width="148" height="12" rx="6" fill="#8A96A3"/>
+  <rect x="1016" y="192" width="132" height="12" rx="6" fill="#8A96A3"/>
+  <rect x="1016" y="242" width="184" height="88" rx="18" fill="#17293D"/>
+  <rect x="1038" y="268" width="92" height="14" rx="7" fill="#4AA3FF"/>
+  <rect x="1038" y="296" width="124" height="10" rx="5" fill="#C8D1DC" fill-opacity="0.75"/>
+  <text x="368" y="520" fill="#C8D1DC" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="600">Openclaude Studio</text>
+  <text x="368" y="556" fill="#8A96A3" font-family="Segoe UI, Arial, sans-serif" font-size="20">Modern desktop GUI for OpenClaude with sessions, permissions, attachments, and logs.</text>
+</svg>

@@ -27,6 +27,7 @@ class OpenClaudeRunner(QObject):
     error_occurred = pyqtSignal(str)
     result_ready = pyqtSignal(dict)
     session_initialized = pyqtSignal(str)
+    runtime_state_changed = pyqtSignal(dict)
 
     def __init__(self) -> None:
         super().__init__()
@@ -37,6 +38,7 @@ class OpenClaudeRunner(QObject):
         self._partial_text = ""
         self._last_session_id = ""
         self._result_emitted = False
+        self._request_config: OpenClaudeConfig | None = None
 
     @property
     def is_running(self) -> bool:
@@ -57,6 +59,7 @@ class OpenClaudeRunner(QObject):
         self._partial_text = ""
         self._last_session_id = request.conversation.openclaude_session_id
         self._result_emitted = False
+        self._request_config = request.config
 
         process = QProcess(self)
         process.setProgram(request.config.executable)
@@ -82,6 +85,15 @@ class OpenClaudeRunner(QObject):
         self._process = process
         self._logger.info("Launching OpenClaude: %s %s", request.config.executable, " ".join(process.arguments()))
         self.status_changed.emit("Running OpenClaude...")
+        self.runtime_state_changed.emit(
+            {
+                "status": "running",
+                "provider": request.config.provider_name,
+                "model": request.config.model or self._infer_model(request.config.environment),
+                "workspace": request.config.working_directory or str(Path.cwd()),
+                "session_id": self._last_session_id,
+            }
+        )
         process.start()
 
     def _build_arguments(self, request: RunRequest) -> list[str]:
@@ -125,6 +137,8 @@ class OpenClaudeRunner(QObject):
         chunk = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         self._stderr_buffer += chunk
         if chunk.strip():
+            if "permission" in chunk.lower():
+                self.runtime_state_changed.emit({"status": "permission_attention", "details": chunk.strip()})
             self.status_changed.emit(chunk.strip())
 
     def _parse_stream_line(self, line: str) -> None:
@@ -163,6 +177,15 @@ class OpenClaudeRunner(QObject):
                 if self._last_session_id:
                     self.session_initialized.emit(self._last_session_id)
                 self.status_changed.emit(f"Connected to session {self._last_session_id or 'new'}")
+                self.runtime_state_changed.emit(
+                    {
+                        "status": "connected",
+                        "provider": self._request_config.provider_name if self._request_config else "Custom",
+                        "model": self._request_config.model if self._request_config else "",
+                        "workspace": self._request_config.working_directory if self._request_config else "",
+                        "session_id": self._last_session_id,
+                    }
+                )
             elif subtype in {"hook_progress", "task_progress"}:
                 self.status_changed.emit(payload.get("output") or payload.get("description") or subtype)
         elif message_type in {"tool_progress", "tool_use_summary"}:
@@ -190,8 +213,19 @@ class OpenClaudeRunner(QObject):
             )
         if self._stderr_buffer.strip() and exit_code != 0:
             self.error_occurred.emit(self._stderr_buffer.strip())
+            self.runtime_state_changed.emit({"status": "error", "details": self._stderr_buffer.strip(), "session_id": self._last_session_id})
+        else:
+            self.runtime_state_changed.emit({"status": "idle", "session_id": self._last_session_id})
         self.status_changed.emit("Ready")
         self._process = None
 
     def _handle_process_error(self, error) -> None:
-        self.error_occurred.emit(f"Failed to start OpenClaude: {error}")
+        message = f"Failed to start OpenClaude: {error}"
+        self.error_occurred.emit(message)
+        self.runtime_state_changed.emit({"status": "error", "details": message, "session_id": self._last_session_id})
+
+    def _infer_model(self, environment: dict[str, str]) -> str:
+        for key in ("OPENAI_MODEL", "ANTHROPIC_MODEL", "GEMINI_MODEL"):
+            if environment.get(key):
+                return environment[key]
+        return ""

@@ -19,10 +19,12 @@ class OpenClaudeConfig:
     executable: str = "openclaude"
     working_directory: str = ""
     model: str = ""
+    provider_name: str = "Custom"
     system_prompt: str = ""
     append_system_prompt: str = ""
     extra_args: str = ""
     environment: dict[str, str] = field(default_factory=dict)
+    profiles: dict[str, dict[str, str]] = field(default_factory=dict)
     print_options: PrintOptions = field(default_factory=PrintOptions)
 
 
@@ -59,10 +61,12 @@ class AppConfig:
                 executable=openclaude.get("executable", "openclaude"),
                 working_directory=openclaude.get("working_directory", ""),
                 model=openclaude.get("model", ""),
+                provider_name=openclaude.get("provider_name", "Custom"),
                 system_prompt=openclaude.get("system_prompt", ""),
                 append_system_prompt=openclaude.get("append_system_prompt", ""),
                 extra_args=openclaude.get("extra_args", ""),
                 environment=dict(openclaude.get("environment", {})),
+                profiles=dict(openclaude.get("profiles", {})),
                 print_options=PrintOptions(**openclaude.get("print_options", {})),
             ),
             appearance=AppearanceConfig(**appearance),

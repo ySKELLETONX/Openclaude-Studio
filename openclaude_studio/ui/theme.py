@@ -94,6 +94,20 @@ QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard {{
     border: 1px solid {colors["panel_border"]};
     border-radius: 18px;
 }}
+QFrame#MessageCard, QFrame#StreamCard {{
+    background: {colors["surface"]};
+    border: 1px solid {colors["panel_border"]};
+    border-radius: 18px;
+}}
+QFrame[messageRole="user"] {{
+    background: {colors["user_bubble"]};
+}}
+QFrame[messageRole="assistant"] {{
+    background: {colors["assistant_bubble"]};
+}}
+QFrame[messageRole="system"] {{
+    background: {colors["system_bubble"]};
+}}
 QListWidget {{
     background: transparent;
     border: none;
@@ -132,6 +146,14 @@ QPushButton[accent="true"] {{
     border: none;
     font-weight: 700;
 }}
+QPushButton[secondary="true"] {{
+    background: transparent;
+    color: {colors["muted"]};
+}}
+QPushButton[secondary="true"]:hover {{
+    background: {colors["hover"]};
+    color: {colors["text"]};
+}}
 QPushButton[danger="true"] {{
     background: {colors["accent_strong"]};
     color: #ffffff;
@@ -161,6 +183,16 @@ QScrollArea {{
 }}
 QLabel#MutedLabel {{
     color: {colors["muted"]};
+}}
+QLabel#SectionTitle {{
+    color: {colors["text"]};
+    font-size: 12pt;
+    font-weight: 600;
+}}
+QLabel#HeroTitle {{
+    color: {colors["text"]};
+    font-size: 13pt;
+    font-weight: 600;
 }}
 QTabWidget::pane {{
     border: 1px solid {colors["panel_border"]};

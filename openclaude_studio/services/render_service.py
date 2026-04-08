@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from html import unescape
 
@@ -13,13 +14,21 @@ from pygments.util import ClassNotFound
 from openclaude_studio.ui.theme import theme_colors
 
 
+@dataclass
+class RenderedMessage:
+    html: str
+    code_blocks: list[tuple[str, str]]
+    plain_text: str
+
+
 class RenderService:
     def __init__(self) -> None:
         self._md = MarkdownIt("commonmark", {"breaks": True, "html": False})
         self._md.renderer.rules["fence"] = self._render_fence
         self._formatter = HtmlFormatter(nowrap=True)
+        self._current_code_blocks: list[tuple[str, str]] = []
 
-    def render_message(self, role: str, content: str, theme_name: str = "dark") -> str:
+    def render_message(self, role: str, content: str, theme_name: str = "dark") -> RenderedMessage:
         colors = theme_colors(theme_name)
         color = {
             "user": colors["text"],
@@ -32,8 +41,9 @@ class RenderService:
             "system": colors["system_bubble"],
         }.get(role, colors["assistant_bubble"])
 
+        self._current_code_blocks = []
         body = self._render_body(content)
-        return (
+        html = (
             f"<section style='margin:12px 0;padding:16px 18px;border-radius:18px;background:{background};"
             f"border:1px solid {colors['panel_border']};'>"
             f"<div style='font-size:11px;color:{colors['muted']};margin-bottom:10px;text-transform:uppercase;"
@@ -41,6 +51,11 @@ class RenderService:
             f"{escape(role)}</div>"
             f"<div style='color:{color}; line-height:1.55;'>{body}</div>"
             "</section>"
+        )
+        return RenderedMessage(
+            html=html,
+            code_blocks=list(self._current_code_blocks),
+            plain_text=content.strip(),
         )
 
     def extract_last_code_block(self, content: str) -> str:
@@ -71,6 +86,7 @@ class RenderService:
         info = (token.info or "").strip()
         language = info.split()[0] if info else "text"
         code = token.content.rstrip()
+        self._current_code_blocks.append((language, code))
         highlighted = self._highlight_code(code, language)
         safe_language = escape(language.upper() if language else "TEXT")
         return (
@@ -79,7 +95,7 @@ class RenderService:
             "padding:8px 12px;border:1px solid rgba(127,127,127,0.22);border-bottom:none;"
             "border-top-left-radius:14px;border-top-right-radius:14px;background:rgba(127,127,127,0.08);"
             "font-size:11px;letter-spacing:0.08em;'>"
-            f"<span>{safe_language}</span><span>copy from toolbar</span></div>"
+            f"<span>{safe_language}</span><span>copy below</span></div>"
             "<pre style='margin:0;border-top-left-radius:0;border-top-right-radius:0;'><code>"
             f"{highlighted}</code></pre></div>"
         )

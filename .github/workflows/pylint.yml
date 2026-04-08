@@ -27,4 +27,4 @@ jobs:
 
       - name: Run pylint
         run: |
-          pylint main.py openclaude_studio tests
+          pylint --rcfile=.pylintrc main.py openclaude_studio tests

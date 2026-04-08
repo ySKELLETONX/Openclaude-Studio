@@ -1,0 +1,88 @@
+[MASTER]
+extension-pkg-allow-list=PyQt6
+ignored-modules=
+    PyQt6,
+    PyQt6.QtCore,
+    PyQt6.QtGui,
+    PyQt6.QtWidgets,
+    PyQt6.QtPrintSupport,
+    pygments.formatters,
+    pygments.lexers,
+    markdown_it.renderer
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    line-too-long,
+    too-many-instance-attributes,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-public-methods,
+    too-many-lines,
+    too-few-public-methods,
+    attribute-defined-outside-init,
+    invalid-name,
+    broad-exception-caught,
+    protected-access,
+    disallowed-name,
+    subprocess-run-check
+
+[FORMAT]
+max-line-length=100
+
+[TYPECHECK]
+generated-members=
+    pyqtSignal,
+    Qt,
+    QAction,
+    QApplication,
+    QCheckBox,
+    QCloseEvent,
+    QComboBox,
+    QDesktopServices,
+    QDialog,
+    QDialogButtonBox,
+    QDragEnterEvent,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGuiApplication,
+    QHBoxLayout,
+    QIcon,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QObject,
+    QPixmap,
+    QPrinter,
+    QPrintPreviewDialog,
+    QProcess,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QTabWidget,
+    QTextBrowser,
+    QTextDocument,
+    QTextEdit,
+    QToolBar,
+    QUrl,
+    QVBoxLayout,
+    QWidget,
+    HtmlFormatter,
+    TextLexer
+
+[DESIGN]
+max-returns=8
+max-attributes=60
+max-locals=30
+max-statements=120
+max-public-methods=40

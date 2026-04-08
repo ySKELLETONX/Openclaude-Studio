@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 
 from openclaude_studio.services.crash_handler import install_crash_handler
 from openclaude_studio.services.logging_service import get_logger, setup_logging

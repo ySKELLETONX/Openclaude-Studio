@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtGui import QTextDocument
-from PySide6.QtPrintSupport import QPrintPreviewDialog, QPrinter
+from PyQt6.QtGui import QTextDocument
+from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrinter
 
 from openclaude_studio.models.conversation import Conversation
 

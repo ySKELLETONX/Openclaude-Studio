@@ -2,7 +2,7 @@
 
 # Openclaude Studio
 
-Modern desktop GUI for OpenClaude built with Python and PySide6.
+Modern desktop GUI for OpenClaude built with Python and PyQt6.
 
 [English](#english) | [Português do Brasil](#portugues-do-brasil)
 
@@ -12,7 +12,7 @@ Modern desktop GUI for OpenClaude built with Python and PySide6.
 
 ## English
 
-Openclaude Studio is a modern desktop GUI for [OpenClaude](https://github.com/Gitlawb/openclaude), built with Python and `PySide6`.
+Openclaude Studio is a modern desktop GUI for [OpenClaude](https://github.com/Gitlawb/openclaude), built with Python and `PyQt6`.
 
 It brings a Codex / claude.ai inspired experience to OpenClaude with a modern chat interface, persistent conversations, configurable provider integration, transcript export/print, screenshots, and crash-safe logging.
 
@@ -32,7 +32,7 @@ It brings a Codex / claude.ai inspired experience to OpenClaude with a modern ch
 
 ### Stack
 
-- `PySide6`
+- `PyQt6`
 - `qtawesome`
 - `markdown-it-py`
 - `Pygments`
@@ -108,7 +108,7 @@ The app stores project-local data in `data/`:
 
 ## Portugues do Brasil
 
-Openclaude Studio é uma interface desktop moderna para o [OpenClaude](https://github.com/Gitlawb/openclaude), desenvolvida em Python com `PySide6`.
+Openclaude Studio é uma interface desktop moderna para o [OpenClaude](https://github.com/Gitlawb/openclaude), desenvolvida em Python com `PyQt6`.
 
 Ele traz uma experiência inspirada no Codex e no claude.ai para o OpenClaude, com interface de chat moderna, conversas persistentes, integração configurável com providers, exportação/impressão de transcrições, captura de tela e logs com tratamento de crash.
 
@@ -128,7 +128,7 @@ Ele traz uma experiência inspirada no Codex e no claude.ai para o OpenClaude, c
 
 ### Tecnologias
 
-- `PySide6`
+- `PyQt6`
 - `qtawesome`
 - `markdown-it-py`
 - `Pygments`

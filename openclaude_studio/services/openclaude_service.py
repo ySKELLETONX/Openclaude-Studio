@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, Signal
+from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 from openclaude_studio.models.config import OpenClaudeConfig
 from openclaude_studio.models.conversation import Conversation
@@ -21,12 +21,12 @@ class RunRequest:
 
 
 class OpenClaudeRunner(QObject):
-    assistant_delta = Signal(str)
-    event_received = Signal(dict)
-    status_changed = Signal(str)
-    error_occurred = Signal(str)
-    result_ready = Signal(dict)
-    session_initialized = Signal(str)
+    assistant_delta = pyqtSignal(str)
+    event_received = pyqtSignal(dict)
+    status_changed = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+    result_ready = pyqtSignal(dict)
+    session_initialized = pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -40,7 +40,7 @@ class OpenClaudeRunner(QObject):
 
     @property
     def is_running(self) -> bool:
-        return self._process is not None and self._process.state() != QProcess.NotRunning
+        return self._process is not None and self._process.state() != QProcess.ProcessState.NotRunning
 
     def stop(self) -> None:
         if self._process is not None and self.is_running:
@@ -62,7 +62,7 @@ class OpenClaudeRunner(QObject):
         process.setProgram(request.config.executable)
         process.setArguments(self._build_arguments(request))
         process.setWorkingDirectory(request.config.working_directory or str(Path.cwd()))
-        process.setProcessChannelMode(QProcess.SeparateChannels)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
 
         env = os.environ.copy()
         env.update({key: value for key, value in request.config.environment.items() if value})

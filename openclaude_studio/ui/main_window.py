@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import qtawesome as qta
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QTextCursor
-from PySide6.QtWidgets import (
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QAction, QDesktopServices, QGuiApplication, QTextCursor
+from PyQt6.QtWidgets import (
+    QApplication,
     QInputDialog,
     QFileDialog,
     QFrame,
@@ -25,7 +26,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QUrl
 
 from openclaude_studio.models.conversation import Conversation
 from openclaude_studio.services.conversation_service import ConversationService
@@ -35,7 +35,7 @@ from openclaude_studio.services.openclaude_service import OpenClaudeRunner, RunR
 from openclaude_studio.services.render_service import RenderService
 from openclaude_studio.services.settings_service import SettingsService
 from openclaude_studio.ui.settings_dialog import SettingsDialog
-from openclaude_studio.ui.theme import APP_STYLESHEET
+from openclaude_studio.ui.theme import build_stylesheet, theme_colors
 
 
 class MainWindow(QMainWindow):
@@ -49,10 +49,11 @@ class MainWindow(QMainWindow):
         self.render_service = RenderService()
         self.runner = OpenClaudeRunner()
         self.current_conversation = Conversation()
+        self._colors = theme_colors(self.config.appearance.theme)
 
         self.setWindowTitle("Openclaude Studio")
         self.resize(1480, 900)
-        self.setStyleSheet(APP_STYLESHEET)
+        self._apply_theme()
 
         self._build_toolbar()
         self._build_ui()
@@ -79,6 +80,12 @@ class MainWindow(QMainWindow):
         logs_action.triggered.connect(self.open_logs_folder)
         exports_action = QAction(qta.icon("fa6s.box-archive"), "Open Exports", self)
         exports_action.triggered.connect(self.open_exports_folder)
+        self.theme_toggle_action = QAction(self)
+        self.theme_toggle_action.triggered.connect(self.toggle_theme)
+        copy_last_action = QAction(qta.icon("fa6s.copy"), "Copy Last Reply", self)
+        copy_last_action.triggered.connect(self.copy_last_assistant_message)
+        copy_code_action = QAction(qta.icon("fa6s.code"), "Copy Last Code Block", self)
+        copy_code_action.triggered.connect(self.copy_last_code_block)
         rename_action = QAction(qta.icon("fa6s.pen"), "Rename Chat", self)
         rename_action.triggered.connect(self.rename_current_chat)
         delete_action = QAction(qta.icon("fa6s.trash"), "Delete Chat", self)
@@ -93,15 +100,19 @@ class MainWindow(QMainWindow):
         toolbar.addAction(export_action)
         toolbar.addAction(print_action)
         toolbar.addAction(screenshot_action)
+        toolbar.addAction(copy_last_action)
+        toolbar.addAction(copy_code_action)
         toolbar.addSeparator()
+        toolbar.addAction(self.theme_toggle_action)
         toolbar.addAction(logs_action)
         toolbar.addAction(exports_action)
+        self._refresh_theme_action()
 
     def _build_ui(self) -> None:
         root = QWidget()
         root_layout = QHBoxLayout(root)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._build_sidebar())
         splitter.addWidget(self._build_chat_panel())
         splitter.addWidget(self._build_events_panel())
@@ -118,7 +129,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(frame)
 
         title = QLabel("Conversations")
-        title.setStyleSheet("font-size: 16pt; font-weight: 700;")
+        title.setStyleSheet(f"font-size: 12pt; font-weight: 600; color: {self._colors['text']};")
         layout.addWidget(title)
 
         self.search_edit = QLineEdit()
@@ -128,7 +139,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_list = QListWidget()
         self.sidebar_list.itemClicked.connect(self._handle_conversation_selected)
-        self.sidebar_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.sidebar_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.sidebar_list.customContextMenuRequested.connect(self._open_sidebar_context_menu)
         layout.addWidget(self.sidebar_list)
 
@@ -146,19 +157,24 @@ class MainWindow(QMainWindow):
         header.setObjectName("HeaderCard")
         header_layout = QVBoxLayout(header)
         self.title_label = QLabel("Openclaude Studio")
-        self.title_label.setStyleSheet("font-size: 18pt; font-weight: 700;")
+        self.title_label.setStyleSheet(f"font-size: 13pt; font-weight: 600; color: {self._colors['text']};")
         self.status_label = QLabel("Ready")
         self.status_label.setObjectName("MutedLabel")
         self.session_label = QLabel("Session: not started")
         self.session_label.setObjectName("MutedLabel")
+        self.theme_badge = QLabel("Studio Midnight")
+        self.theme_badge.setStyleSheet(
+            f"background:{self._colors['accent_soft']}; color:{self._colors['accent']};"
+            "padding:6px 10px; border-radius:10px; font-weight:600;"
+        )
         header_layout.addWidget(self.title_label)
         header_layout.addWidget(self.status_label)
         header_layout.addWidget(self.session_label)
+        header_layout.addWidget(self.theme_badge, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(header)
 
         self.chat_view = QTextBrowser()
         self.chat_view.setOpenExternalLinks(True)
-        self.chat_view.setStyleSheet("border:none; background:#0d1218; border-radius:14px; padding: 10px;")
         layout.addWidget(self.chat_view, 1)
 
         composer = QFrame()
@@ -176,6 +192,7 @@ class MainWindow(QMainWindow):
         actions.addStretch()
 
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setProperty("danger", True)
         self.stop_button.clicked.connect(self.runner.stop)
         self.send_button = QPushButton("Send to OpenClaude")
         self.send_button.setProperty("accent", True)
@@ -191,9 +208,21 @@ class MainWindow(QMainWindow):
         frame.setObjectName("EventsPanel")
         layout = QVBoxLayout(frame)
         label = QLabel("Events & Tools")
-        label.setStyleSheet("font-size: 16pt; font-weight: 700;")
+        label.setStyleSheet(f"font-size: 12pt; font-weight: 600; color: {self._colors['text']};")
+        self.event_summary_label = QLabel("No activity yet")
+        self.event_summary_label.setObjectName("MutedLabel")
+        actions = QHBoxLayout()
+        clear_button = QPushButton("Clear")
+        clear_button.clicked.connect(self.clear_event_view)
+        copy_button = QPushButton("Copy events")
+        copy_button.clicked.connect(self.copy_events)
+        actions.addWidget(clear_button)
+        actions.addWidget(copy_button)
+        actions.addStretch()
         self.events_list = QListWidget()
         layout.addWidget(label)
+        layout.addWidget(self.event_summary_label)
+        layout.addLayout(actions)
         layout.addWidget(self.events_list)
         return frame
 
@@ -214,11 +243,11 @@ class MainWindow(QMainWindow):
 
     def _add_sidebar_item(self, conversation: Conversation) -> None:
         item = QListWidgetItem(conversation.title)
-        item.setData(Qt.UserRole, conversation)
+        item.setData(Qt.ItemDataRole.UserRole, conversation)
         self.sidebar_list.addItem(item)
 
     def _handle_conversation_selected(self, item: QListWidgetItem) -> None:
-        conversation = item.data(Qt.UserRole)
+        conversation = item.data(Qt.ItemDataRole.UserRole)
         self.current_conversation = conversation
         self._show_conversation(conversation)
 
@@ -233,6 +262,7 @@ class MainWindow(QMainWindow):
             self._append_message(message.role, message.content)
         for event in conversation.event_log[-200:]:
             self.events_list.addItem(str(event))
+        self._update_event_summary()
 
     def new_chat(self) -> None:
         self.current_conversation = Conversation()
@@ -264,9 +294,9 @@ class MainWindow(QMainWindow):
         self.runner.start(request)
 
     def _append_message(self, role: str, content: str) -> None:
-        html = self.render_service.render_message(role, content)
+        html = self.render_service.render_message(role, content, self.config.appearance.theme)
         self.chat_view.append(html)
-        self.chat_view.moveCursor(QTextCursor.End)
+        self.chat_view.moveCursor(QTextCursor.MoveOperation.End)
 
     def _append_assistant_delta(self, text: str) -> None:
         if not self.current_conversation.messages or self.current_conversation.messages[-1].role != "assistant":
@@ -278,6 +308,7 @@ class MainWindow(QMainWindow):
         self.current_conversation.event_log.append(payload)
         self.events_list.addItem(str(payload))
         self.events_list.scrollToBottom()
+        self._update_event_summary()
 
     def _handle_runner_result(self, result: dict) -> None:
         session_id = result.get("session_id")
@@ -320,11 +351,22 @@ class MainWindow(QMainWindow):
             if conversation.id == self.current_conversation.id:
                 self.sidebar_list.setCurrentRow(self.sidebar_list.count() - 1)
 
+    def _update_event_summary(self) -> None:
+        total = len(self.current_conversation.event_log)
+        if total == 0:
+            self.event_summary_label.setText("No activity yet")
+            return
+        last_type = self.current_conversation.event_log[-1].get("type", "event")
+        self.event_summary_label.setText(f"{total} events captured • latest: {last_type}")
+
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.config, self)
         if dialog.exec():
             self.config = dialog.apply()
             self.settings_service.save(self.config)
+            self._apply_theme()
+            self._refresh_theme_action()
+            self._show_conversation(self.current_conversation)
             self.workspace_label.setText(self.config.openclaude.working_directory or str(Path.cwd()))
 
     def export_chat(self) -> None:
@@ -375,7 +417,7 @@ class MainWindow(QMainWindow):
             "Delete chat",
             f"Delete '{self.current_conversation.title}'?",
         )
-        if answer != QMessageBox.Yes:
+        if answer != QMessageBox.StandardButton.Yes:
             return
         conversation_id = self.current_conversation.id
         self.conversation_service.delete(conversation_id)
@@ -390,11 +432,66 @@ class MainWindow(QMainWindow):
     def open_exports_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.settings_service.paths.exports_dir)))
 
+    def clear_event_view(self) -> None:
+        self.current_conversation.event_log.clear()
+        self.events_list.clear()
+        self._update_event_summary()
+        self.conversation_service.save(self.current_conversation)
+
+    def copy_events(self) -> None:
+        text = "\n".join(str(event) for event in self.current_conversation.event_log)
+        QApplication.clipboard().setText(text)
+        self.status_label.setText("Events copied to clipboard")
+
+    def copy_last_assistant_message(self) -> None:
+        for message in reversed(self.current_conversation.messages):
+            if message.role == "assistant" and message.content.strip():
+                QApplication.clipboard().setText(message.content)
+                self.status_label.setText("Last reply copied")
+                return
+        self.status_label.setText("No assistant reply to copy")
+
+    def copy_last_code_block(self) -> None:
+        for message in reversed(self.current_conversation.messages):
+            if message.role != "assistant":
+                continue
+            code = self.render_service.extract_last_code_block(message.content)
+            if code:
+                QApplication.clipboard().setText(code)
+                self.status_label.setText("Last code block copied")
+                return
+        self.status_label.setText("No code block found")
+
+    def toggle_theme(self) -> None:
+        self.config.appearance.theme = "light" if self.config.appearance.theme == "dark" else "dark"
+        self.settings_service.save(self.config)
+        self._apply_theme()
+        self._refresh_theme_action()
+        self._show_conversation(self.current_conversation)
+
+    def _apply_theme(self) -> None:
+        self._colors = theme_colors(self.config.appearance.theme)
+        self.setStyleSheet(build_stylesheet(self.config.appearance.theme))
+        if hasattr(self, "theme_badge"):
+            self.theme_badge.setStyleSheet(
+                f"background:{self._colors['accent_soft']}; color:{self._colors['accent']};"
+                "padding:6px 10px; border-radius:10px; font-weight:600;"
+            )
+        if hasattr(self, "title_label"):
+            self.title_label.setStyleSheet(f"font-size: 13pt; font-weight: 600; color: {self._colors['text']};")
+
+    def _refresh_theme_action(self) -> None:
+        is_dark = self.config.appearance.theme == "dark"
+        icon = qta.icon("fa6s.sun") if is_dark else qta.icon("fa6s.moon")
+        text = "Light Mode" if is_dark else "Dark Mode"
+        self.theme_toggle_action.setIcon(icon)
+        self.theme_toggle_action.setText(text)
+
     def _open_sidebar_context_menu(self, position) -> None:
         item = self.sidebar_list.itemAt(position)
         if item is None:
             return
-        conversation = item.data(Qt.UserRole)
+        conversation = item.data(Qt.ItemDataRole.UserRole)
         self.current_conversation = conversation
 
         menu = QMenu(self)

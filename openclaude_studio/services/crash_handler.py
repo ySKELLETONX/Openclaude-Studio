@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox
 
 
 def install_crash_handler(crash_dir: Path) -> None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import (
+from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from openclaude_studio.models.config import AppConfig
+from openclaude_studio.services.provider_presets import preset_names, preset_to_text
 
 
 class SettingsDialog(QDialog):
@@ -86,6 +87,14 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.addWidget(QLabel("Environment variables used for OpenClaude provider integration."))
+        preset_row = QHBoxLayout()
+        self.provider_preset_combo = QComboBox()
+        self.provider_preset_combo.addItems(["Custom"] + preset_names())
+        apply_preset = QPushButton("Apply preset")
+        apply_preset.clicked.connect(self._apply_provider_preset)
+        preset_row.addWidget(self.provider_preset_combo)
+        preset_row.addWidget(apply_preset)
+        layout.addLayout(preset_row)
         self.environment_edit = QTextEdit()
         lines = [f"{key}={value}" for key, value in self._config.openclaude.environment.items()]
         self.environment_edit.setPlainText("\n".join(lines))
@@ -97,7 +106,7 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         form = QFormLayout(widget)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["dark"])
+        self.theme_combo.addItems(["dark", "light"])
         self.theme_combo.setCurrentText(self._config.appearance.theme)
         self.accent_edit = QLineEdit(self._config.appearance.accent_color)
         self.font_edit = QLineEdit(self._config.appearance.font_family)
@@ -110,6 +119,16 @@ class SettingsDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, "Select OpenClaude executable")
         if path:
             self.executable_edit.setText(path)
+
+    def _apply_provider_preset(self) -> None:
+        name = self.provider_preset_combo.currentText()
+        if name == "Custom":
+            return
+        preset_text = preset_to_text(name)
+        if self.environment_edit.toPlainText().strip():
+            self.environment_edit.setPlainText(self.environment_edit.toPlainText().strip() + "\n" + preset_text)
+        else:
+            self.environment_edit.setPlainText(preset_text)
 
     def apply(self) -> AppConfig:
         self._config.openclaude.executable = self.executable_edit.text().strip() or "openclaude"

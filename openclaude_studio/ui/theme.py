@@ -1,73 +1,202 @@
-APP_STYLESHEET = """
-QWidget {
-    background: #11161d;
-    color: #edf2f7;
-    font-family: "Segoe UI";
-    font-size: 10pt;
+from __future__ import annotations
+
+
+THEMES = {
+    "dark": {
+        "window": "#0c1117",
+        "surface": "#121923",
+        "surface_alt": "#192331",
+        "sidebar": "#101720",
+        "panel_border": "#26364a",
+        "text": "#c8d1dc",
+        "muted": "#8a96a3",
+        "accent": "#4aa3ff",
+        "accent_strong": "#ff7a59",
+        "accent_soft": "#17293d",
+        "input": "#0e151d",
+        "input_border": "#294059",
+        "hover": "#182330",
+        "selected": "#1f3247",
+        "user_bubble": "#17324d",
+        "assistant_bubble": "#121b25",
+        "system_bubble": "#18212c",
+        "toolbar": "#101720",
+        "success": "#4fd1a5",
+    },
+    "light": {
+        "window": "#f3f7fc",
+        "surface": "#ffffff",
+        "surface_alt": "#ecf3fb",
+        "sidebar": "#dfeaf6",
+        "panel_border": "#cad8e8",
+        "text": "#263443",
+        "muted": "#67798d",
+        "accent": "#2f80ed",
+        "accent_strong": "#f26d4f",
+        "accent_soft": "#e6f0ff",
+        "input": "#f9fbff",
+        "input_border": "#c5d6e8",
+        "hover": "#e6eef8",
+        "selected": "#dcecff",
+        "user_bubble": "#dcecff",
+        "assistant_bubble": "#ffffff",
+        "system_bubble": "#eef4fb",
+        "toolbar": "#e6eef7",
+        "success": "#157f3b",
+    },
 }
-QMainWindow, QDialog {
-    background: #0d1218;
-}
-QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard {
-    background: #151c25;
-    border: 1px solid #263241;
-    border-radius: 16px;
-}
-QListWidget {
+
+
+def build_stylesheet(theme_name: str) -> str:
+    colors = THEMES.get(theme_name, THEMES["dark"])
+    return f"""
+QWidget {{
+    background: {colors["window"]};
+    color: {colors["text"]};
+    font-family: "Segoe UI Variable", "Segoe UI", "Inter";
+    font-size: 9pt;
+    font-weight: 400;
+}}
+QMainWindow, QDialog {{
+    background: {colors["window"]};
+}}
+QLabel {{
+    color: {colors["text"]};
+}}
+QToolTip {{
+    color: {colors["text"]};
+    background-color: {colors["surface"]};
+    border: none;
+    border-left: 3px solid {colors["accent_strong"]};
+    padding: 7px 9px;
+}}
+QToolBar {{
+    background: {colors["toolbar"]};
+    border: none;
+    spacing: 6px;
+    padding: 10px 12px;
+}}
+QToolBar QToolButton {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 8px 12px;
+    color: {colors["muted"]};
+    font-size: 9pt;
+}}
+QToolBar QToolButton:hover {{
+    background: {colors["hover"]};
+    border: 1px solid {colors["panel_border"]};
+    color: {colors["text"]};
+}}
+QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard {{
+    background: {colors["surface"]};
+    border: 1px solid {colors["panel_border"]};
+    border-radius: 18px;
+}}
+QListWidget {{
     background: transparent;
     border: none;
     outline: none;
-}
-QListWidget::item {
+}}
+QListWidget::item {{
+    background: transparent;
     padding: 10px;
     margin: 4px 0;
     border-radius: 12px;
-}
-QListWidget::item:selected {
-    background: #203145;
-}
-QPushButton {
-    background: #203145;
-    border: 1px solid #35506d;
-    border-radius: 12px;
-    padding: 8px 14px;
-}
-QPushButton:hover {
-    background: #28415a;
-}
-QPushButton[accent="true"] {
-    background: #4aa3ff;
-    color: #08111b;
+    color: {colors["muted"]};
+}}
+QListWidget::item:hover {{
+    background: {colors["hover"]};
+    color: {colors["text"]};
+}}
+QListWidget::item:selected {{
+    background: {colors["selected"]};
+    color: {colors["text"]};
+}}
+QPushButton {{
+    background: {colors["surface_alt"]};
+    border: 1px solid {colors["panel_border"]};
+    border-radius: 14px;
+    padding: 10px 14px;
+    color: {colors["muted"]};
+    font-size: 9pt;
+}}
+QPushButton:hover {{
+    background: {colors["hover"]};
+    color: {colors["text"]};
+}}
+QPushButton[accent="true"] {{
+    background: {colors["accent"]};
+    color: #ffffff;
     border: none;
     font-weight: 700;
-}
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
-    background: #0f151c;
-    border: 1px solid #2c3c4f;
-    border-radius: 12px;
-    padding: 8px;
-}
-QScrollArea {
+}}
+QPushButton[danger="true"] {{
+    background: {colors["accent_strong"]};
+    color: #ffffff;
+    border: none;
+}}
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {{
+    background: {colors["input"]};
+    border: 1px solid {colors["input_border"]};
+    border-radius: 16px;
+    padding: 9px 12px;
+    selection-background-color: {colors["accent"]};
+    color: {colors["text"]};
+    font-size: 9pt;
+}}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
+    border: 1px solid {colors["accent"]};
+}}
+QTextBrowser {{
+    background: {colors["window"]};
+    border: 1px solid {colors["panel_border"]};
+    border-radius: 18px;
+    padding: 10px;
+}}
+QScrollArea {{
     border: none;
     background: transparent;
-}
-QLabel#MutedLabel {
-    color: #97a6b5;
-}
-QTabWidget::pane {
-    border: 1px solid #2c3c4f;
+}}
+QLabel#MutedLabel {{
+    color: {colors["muted"]};
+}}
+QTabWidget::pane {{
+    border: 1px solid {colors["panel_border"]};
     border-radius: 14px;
     top: -1px;
-}
-QTabBar::tab {
-    background: #151c25;
-    border: 1px solid #2c3c4f;
+    background: {colors["surface"]};
+}}
+QTabBar::tab {{
+    background: {colors["surface_alt"]};
+    border: 1px solid {colors["panel_border"]};
     padding: 8px 14px;
     margin-right: 4px;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
-}
-QTabBar::tab:selected {
-    background: #203145;
-}
+    color: {colors["muted"]};
+}}
+QTabBar::tab:selected {{
+    background: {colors["selected"]};
+    color: {colors["text"]};
+}}
+QMenu {{
+    background: {colors["surface"]};
+    border: 1px solid {colors["panel_border"]};
+    padding: 8px;
+}}
+QMenu::item {{
+    padding: 8px 18px;
+    border-radius: 8px;
+    color: {colors["muted"]};
+}}
+QMenu::item:selected {{
+    background: {colors["hover"]};
+    color: {colors["text"]};
+}}
 """
+
+
+def theme_colors(theme_name: str) -> dict[str, str]:
+    return THEMES.get(theme_name, THEMES["dark"])

@@ -1,0 +1,4 @@
+PySide6>=6.8
+markdown-it-py>=3.0
+Pygments>=2.19
+qtawesome>=1.4

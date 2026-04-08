@@ -1,0 +1,17 @@
+[project]
+name = "openclaude-studio"
+version = "0.1.0"
+description = "Modern PySide6 desktop UI for OpenClaude"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "PySide6>=6.8",
+  "markdown-it-py>=3.0",
+  "Pygments>=2.19",
+  "qtawesome>=1.4",
+]
+
+[project.optional-dependencies]
+build = [
+  "pyinstaller>=6.11",
+]

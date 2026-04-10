@@ -4,7 +4,7 @@ from difflib import unified_diff
 from pathlib import Path
 
 import qtawesome as qta
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import QSize, Qt, QUrl
 from PyQt6.QtGui import QAction, QCloseEvent, QDesktopServices, QGuiApplication
 from PyQt6.QtWidgets import (
     QFrame,
@@ -21,7 +21,9 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QSizePolicy,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -127,7 +129,10 @@ class MainWindow(QMainWindow):
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main")
+        toolbar.setObjectName("TopBar")
         toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setIconSize(QSize(18, 18))
         self.addToolBar(toolbar)
 
         new_action = QAction(qta.icon("fa6s.plus"), self._l("toolbar.new_chat", "New Chat"), self)
@@ -176,52 +181,103 @@ class MainWindow(QMainWindow):
         copy_last_action.triggered.connect(self.copy_last_assistant_message)
         copy_code_action = QAction(qta.icon("fa6s.code"), self._l("toolbar.copy_last_code", "Copy Last Code Block"), self)
         copy_code_action.triggered.connect(self.copy_last_code_block)
-        self.theme_toggle_action = QAction(self)
-        self.theme_toggle_action.triggered.connect(self.toggle_theme)
         logs_action = QAction(qta.icon("fa6s.folder-open"), self._l("toolbar.open_logs", "Open Logs"), self)
         logs_action.triggered.connect(self.open_logs_folder)
         exports_action = QAction(qta.icon("fa6s.box-archive"), self._l("toolbar.open_exports", "Open Exports"), self)
         exports_action.triggered.connect(self.open_exports_folder)
+        toolbar.addWidget(self._make_toolbar_button(new_action, accent=True))
+        toolbar.addWidget(self._make_toolbar_button(attach_action))
+        toolbar.addSeparator()
+        toolbar.addWidget(self._make_toolbar_button(regenerate_action))
+        toolbar.addWidget(self._make_toolbar_button(continue_action))
+        toolbar.addWidget(
+            self._make_toolbar_menu_button(
+                self._l("toolbar.chat_group", "Chat"),
+                qta.icon("fa6s.comments"),
+                (
+                    import_action,
+                    duplicate_action,
+                    edit_last_action,
+                    rename_action,
+                    pin_action,
+                    tags_action,
+                    delete_action,
+                ),
+            )
+        )
+        toolbar.addWidget(
+            self._make_toolbar_menu_button(
+                self._l("toolbar.git_group", "Git"),
+                qta.icon("fa6s.code-branch"),
+                (
+                    git_refresh_action,
+                    git_stage_action,
+                    git_commit_action,
+                    git_branch_action,
+                    git_pull_action,
+                    git_push_action,
+                ),
+            )
+        )
+        toolbar.addWidget(
+            self._make_toolbar_menu_button(
+                self._l("toolbar.share_group", "Share"),
+                qta.icon("fa6s.arrow-up-right-from-square"),
+                (
+                    export_action,
+                    print_action,
+                    screenshot_action,
+                    copy_last_action,
+                    copy_code_action,
+                    exports_action,
+                ),
+            )
+        )
+        self.toolbar_spacer = QWidget()
+        self.toolbar_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(self.toolbar_spacer)
+        self.theme_toggle_button = self._make_toolbar_action_button()
+        self.theme_toggle_button.clicked.connect(self.toggle_theme)
+        toolbar.addWidget(self.theme_toggle_button)
+        toolbar.addWidget(
+            self._make_toolbar_menu_button(
+                self._l("toolbar.more_group", "More"),
+                qta.icon("fa6s.ellipsis"),
+                (
+                    settings_action,
+                    logs_action,
+                ),
+            )
+        )
 
-        for action in (
-            new_action,
-            import_action,
-            export_action,
-            duplicate_action,
-            None,
-            pin_action,
-            tags_action,
-            attach_action,
-            None,
-            edit_last_action,
-            regenerate_action,
-            continue_action,
-            None,
-            git_refresh_action,
-            git_stage_action,
-            git_commit_action,
-            git_branch_action,
-            git_pull_action,
-            git_push_action,
-            None,
-            settings_action,
-            None,
-            rename_action,
-            delete_action,
-            None,
-            print_action,
-            screenshot_action,
-            copy_last_action,
-            copy_code_action,
-            None,
-            self.theme_toggle_action,
-            logs_action,
-            exports_action,
-        ):
-            if action is None:
-                toolbar.addSeparator()
-            else:
-                toolbar.addAction(action)
+    def _make_toolbar_action_button(self) -> QToolButton:
+        button = QToolButton(self)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setAutoRaise(False)
+        return button
+
+    def _make_toolbar_button(self, action: QAction, accent: bool = False) -> QToolButton:
+        button = self._make_toolbar_action_button()
+        button.setDefaultAction(action)
+        if accent:
+            button.setProperty("accent", True)
+        return button
+
+    def _make_toolbar_menu_button(
+        self,
+        label: str,
+        icon,
+        actions: tuple[QAction, ...],
+    ) -> QToolButton:
+        button = self._make_toolbar_action_button()
+        button.setText(label)
+        button.setIcon(icon)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(button)
+        for action in actions:
+            menu.addAction(action)
+        button.setMenu(menu)
+        return button
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -1106,8 +1162,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_theme_action(self) -> None:
         is_dark = self.config.appearance.theme == "dark"
-        self.theme_toggle_action.setIcon(qta.icon("fa6s.sun") if is_dark else qta.icon("fa6s.moon"))
-        self.theme_toggle_action.setText(
+        self.theme_toggle_button.setIcon(qta.icon("fa6s.sun") if is_dark else qta.icon("fa6s.moon"))
+        self.theme_toggle_button.setText(
             self._l("toolbar.light_mode", "Light Mode") if is_dark else self._l("toolbar.dark_mode", "Dark Mode")
         )
 

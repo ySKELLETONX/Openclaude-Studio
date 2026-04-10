@@ -23,7 +23,12 @@ from PyQt6.QtWidgets import (
 
 from openclaude_studio.models.config import AppConfig
 from openclaude_studio.services.language_service import LanguageService
-from openclaude_studio.services.provider_presets import preset_names, preset_to_text
+from openclaude_studio.services.provider_presets import (
+    preset_example_text,
+    preset_model_hint,
+    preset_names,
+    preset_to_text,
+)
 from openclaude_studio.services.provider_test_service import ProviderTestService
 
 
@@ -109,10 +114,13 @@ class SettingsDialog(QDialog):
     def _build_providers_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("Environment variables used for OpenClaude provider integration."))
+        intro = QLabel("Environment variables used for OpenClaude provider integration.")
+        intro.setObjectName("MutedLabel")
+        layout.addWidget(intro)
         preset_row = QHBoxLayout()
         self.provider_preset_combo = QComboBox()
         self.provider_preset_combo.addItems(["Custom"] + preset_names())
+        self.provider_preset_combo.currentTextChanged.connect(self._update_provider_examples)
         apply_preset = QPushButton("Apply preset")
         apply_preset.clicked.connect(self._apply_provider_preset)
         save_profile = QPushButton("Save profile")
@@ -131,11 +139,32 @@ class SettingsDialog(QDialog):
         profile_row.addWidget(load_profile)
         layout.addLayout(profile_row)
 
+        example_title = QLabel("Provider example")
+        example_title.setObjectName("SectionTitle")
+        layout.addWidget(example_title)
+
+        self.provider_example_label = QLabel()
+        self.provider_example_label.setObjectName("MutedLabel")
+        self.provider_example_label.setWordWrap(True)
+        layout.addWidget(self.provider_example_label)
+
+        self.provider_example_edit = QTextEdit()
+        self.provider_example_edit.setReadOnly(True)
+        self.provider_example_edit.setFixedHeight(180)
+        layout.addWidget(self.provider_example_edit)
+
         self.environment_edit = QTextEdit()
+        self.environment_edit.setPlaceholderText(
+            "Example:\nOPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=gpt-4o"
+        )
         lines = [f"{key}={value}" for key, value in self._config.openclaude.environment.items()]
         self.environment_edit.setPlainText("\n".join(lines))
         layout.addWidget(self.environment_edit)
-        layout.addWidget(QLabel("Examples: OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, CLAUDE_CODE_USE_OPENAI=1"))
+        self.environment_examples_label = QLabel()
+        self.environment_examples_label.setObjectName("MutedLabel")
+        self.environment_examples_label.setWordWrap(True)
+        layout.addWidget(self.environment_examples_label)
+        self._update_provider_examples(self.provider_preset_combo.currentText())
         return widget
 
     def _build_appearance_tab(self) -> QWidget:
@@ -220,9 +249,36 @@ class SettingsDialog(QDialog):
         self.provider_combo.setCurrentText(name)
         self.environment_edit.setPlainText(preset_to_text(name))
         if not self.model_edit.text().strip():
-            for line in preset_to_text(name).splitlines():
-                if line.startswith("OPENAI_MODEL=") or line.startswith("ANTHROPIC_MODEL=") or line.startswith("GEMINI_MODEL="):
-                    self.model_edit.setText(line.split("=", 1)[1])
+            model_hint = preset_model_hint(name)
+            if model_hint:
+                self.model_edit.setText(model_hint)
+
+    def _update_provider_examples(self, name: str) -> None:
+        if name == "Custom":
+            self.provider_example_label.setText(
+                "Custom provider mode. Paste the environment variables required by your gateway or local runtime."
+            )
+            self.provider_example_edit.setPlainText(
+                "Example:\n"
+                "OPENAI_API_KEY=your-key\n"
+                "OPENAI_BASE_URL=https://your-endpoint.example/v1\n"
+                "OPENAI_MODEL=your-model-id\n"
+                "CLAUDE_CODE_USE_OPENAI=1"
+            )
+            self.environment_examples_label.setText(
+                "Tip: one variable per line in KEY=VALUE format. Leave blank lines out."
+            )
+            return
+
+        self.provider_example_label.setText(f"{name} template and suggested models")
+        self.provider_example_edit.setPlainText(preset_example_text(name))
+        model_hint = preset_model_hint(name)
+        if model_hint:
+            self.environment_examples_label.setText(f"Suggested default model: {model_hint}")
+        else:
+            self.environment_examples_label.setText(
+                "This provider does not require a fixed model field in the environment template."
+            )
 
     def _save_profile(self) -> None:
         name, ok = QInputDialog.getText(self, "Save profile", "Profile name:")

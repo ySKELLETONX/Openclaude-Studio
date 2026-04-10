@@ -4,6 +4,7 @@ import shutil
 import socket
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 
 from openclaude_studio.models.config import OpenClaudeConfig
 
@@ -19,8 +20,10 @@ class ProviderTestService:
     def test(self, config: OpenClaudeConfig) -> ProviderTestResult:
         details: list[str] = []
 
-        executable = shutil.which(config.executable) if config.executable else None
-        if executable or config.executable:
+        executable = self._resolve_executable(config.executable)
+        if executable:
+            details.append(f"Executable resolved: {executable}")
+        elif config.executable:
             details.append(f"Executable configured: {config.executable}")
         if not executable and config.executable not in {"", "openclaude"}:
             details.append("Executable path was not found on PATH; make sure it points to a valid binary.")
@@ -41,6 +44,16 @@ class ProviderTestService:
         ok = bool(executable) and not missing
         summary = "Connection profile looks ready." if ok else "Configuration still needs attention."
         return ProviderTestResult(ok=ok, summary=summary, details=details)
+
+    def _resolve_executable(self, executable: str) -> str:
+        configured = executable.strip() or "openclaude"
+        resolved = shutil.which(configured)
+        if resolved:
+            return resolved
+        candidate = Path(configured)
+        if candidate.exists():
+            return str(candidate.resolve())
+        return ""
 
     def _required_keys(self, provider_name: str) -> list[str]:
         mapping = {

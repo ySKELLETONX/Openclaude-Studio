@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +44,7 @@ class OpenClaudeRunner(QObject):
         self._result_emitted = False
         self._request_config: OpenClaudeConfig | None = None
         self._pending_permission: dict | None = None
+        self._reported_stderr = ""
 
     @property
     def is_running(self) -> bool:
@@ -89,10 +91,12 @@ class OpenClaudeRunner(QObject):
         self._result_emitted = False
         self._request_config = request.config
         self._pending_permission = None
+        self._reported_stderr = ""
 
         process = QProcess(self)
-        process.setProgram(request.config.executable)
-        process.setArguments(self._build_arguments(request))
+        launch = self._resolve_launch_command(request.config.executable, self._build_arguments(request))
+        process.setProgram(launch["program"])
+        process.setArguments(launch["arguments"])
         process.setWorkingDirectory(request.config.working_directory or str(Path.cwd()))
         process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
 
@@ -112,7 +116,15 @@ class OpenClaudeRunner(QObject):
         process.errorOccurred.connect(self._handle_process_error)
 
         self._process = process
-        self._logger.info("Launching OpenClaude: %s %s", request.config.executable, " ".join(process.arguments()))
+        safe_env_keys = sorted([key for key, value in request.config.environment.items() if value])
+        self._logger.info(
+            "Launching OpenClaude via program=%s args=%s cwd=%s provider=%s env_keys=%s",
+            launch["program"],
+            process.arguments(),
+            process.workingDirectory(),
+            request.config.provider_name,
+            safe_env_keys,
+        )
         self.status_changed.emit("Running OpenClaude...")
         self.runtime_state_changed.emit(
             {
@@ -166,9 +178,13 @@ class OpenClaudeRunner(QObject):
         chunk = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         self._stderr_buffer += chunk
         if chunk.strip():
+            self._logger.warning("OpenClaude stderr: %s", chunk.strip())
             if "permission" in chunk.lower():
                 self._emit_permission_request(chunk.strip(), "stderr")
-            self.status_changed.emit(chunk.strip())
+            cleaned = self._significant_stderr(chunk.strip())
+            if cleaned:
+                self._reported_stderr = cleaned
+                self.status_changed.emit(cleaned)
 
     def _parse_stream_line(self, line: str) -> None:
         try:
@@ -191,6 +207,11 @@ class OpenClaudeRunner(QObject):
                 self._partial_text += text
                 self.assistant_delta.emit(text)
         elif message_type == "result":
+            self._logger.info(
+                "OpenClaude result received: is_error=%s session_id=%s",
+                payload.get("is_error", False),
+                self._last_session_id,
+            )
             self._result_emitted = True
             self.result_ready.emit(
                 {
@@ -203,6 +224,7 @@ class OpenClaudeRunner(QObject):
         elif message_type == "system":
             subtype = payload.get("subtype", "system")
             if subtype == "init":
+                self._logger.info("OpenClaude session initialized: %s", self._last_session_id or "new")
                 if self._last_session_id:
                     self.session_initialized.emit(self._last_session_id)
                 self.status_changed.emit(f"Connected to session {self._last_session_id or 'new'}")
@@ -246,16 +268,35 @@ class OpenClaudeRunner(QObject):
                     "payload": {},
                 }
             )
-        if self._stderr_buffer.strip() and exit_code != 0:
-            self.error_occurred.emit(self._stderr_buffer.strip())
-            self.runtime_state_changed.emit({"status": "error", "details": self._stderr_buffer.strip(), "session_id": self._last_session_id})
+        stderr_message = self._significant_stderr(self._stderr_buffer.strip())
+        if stderr_message and exit_code != 0 and not self._result_emitted:
+            self.error_occurred.emit(stderr_message)
+            self.runtime_state_changed.emit({"status": "error", "details": stderr_message, "session_id": self._last_session_id})
         else:
             self.runtime_state_changed.emit({"status": "idle", "session_id": self._last_session_id})
         self.status_changed.emit("Ready")
         self._process = None
 
     def _handle_process_error(self, error) -> None:
-        message = f"Failed to start OpenClaude: {error}"
+        details = {
+            "configured_executable": self._request_config.executable if self._request_config else "",
+            "resolved_program": self._process.program() if self._process is not None else "",
+            "arguments": self._process.arguments() if self._process is not None else [],
+            "working_directory": self._process.workingDirectory() if self._process is not None else "",
+        }
+        self._logger.error("OpenClaude process error: %s | details=%s", error, details)
+        if error == QProcess.ProcessError.FailedToStart:
+            message = "OpenClaude failed to start."
+        elif error == QProcess.ProcessError.Crashed:
+            message = "OpenClaude crashed during execution."
+        elif error == QProcess.ProcessError.Timedout:
+            message = "OpenClaude timed out."
+        elif error == QProcess.ProcessError.ReadError:
+            message = "OpenClaude produced a read error."
+        elif error == QProcess.ProcessError.WriteError:
+            message = "OpenClaude produced a write error."
+        else:
+            message = f"OpenClaude process error: {error}"
         self.error_occurred.emit(message)
         self.runtime_state_changed.emit({"status": "error", "details": message, "session_id": self._last_session_id})
 
@@ -281,3 +322,59 @@ class OpenClaudeRunner(QObject):
             if environment.get(key):
                 return environment[key]
         return ""
+
+    def _significant_stderr(self, text: str) -> str:
+        if not text:
+            return ""
+        cleaned_lines = [
+            line for line in text.splitlines()
+            if "Warning: no stdin data received in 3s" not in line
+        ]
+        return "\n".join(line for line in cleaned_lines if line.strip()).strip()
+
+    def _resolve_launch_command(self, executable: str, arguments: list[str]) -> dict[str, object]:
+        configured = executable.strip() or "openclaude"
+        resolved = shutil.which(configured)
+        if resolved is None and Path(configured).exists():
+            resolved = str(Path(configured).resolve())
+        target = resolved or configured
+        npm_launch = self._resolve_npm_openclaude_entry(target, arguments)
+        if npm_launch is not None:
+            return npm_launch
+        suffix = Path(target).suffix.lower()
+
+        if suffix in {".cmd", ".bat"}:
+            comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+            return {
+                "program": comspec,
+                "arguments": ["/c", target, *arguments],
+            }
+        if suffix == ".ps1":
+            shell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+            return {
+                "program": shell,
+                "arguments": ["-ExecutionPolicy", "Bypass", "-File", target, *arguments],
+            }
+        return {
+            "program": target,
+            "arguments": arguments,
+        }
+
+    def _resolve_npm_openclaude_entry(
+        self,
+        target: str,
+        arguments: list[str],
+    ) -> dict[str, object] | None:
+        target_path = Path(target)
+        if target_path.name.lower() not in {"openclaude.cmd", "openclaude.ps1"}:
+            return None
+        npm_root = target_path.parent / "node_modules" / "@gitlawb" / "openclaude"
+        cli_entry = npm_root / "dist" / "cli.mjs"
+        if not cli_entry.exists():
+            return None
+        local_node = target_path.parent / "node.exe"
+        node_program = str(local_node) if local_node.exists() else (shutil.which("node") or "node")
+        return {
+            "program": node_program,
+            "arguments": [str(cli_entry), *arguments],
+        }

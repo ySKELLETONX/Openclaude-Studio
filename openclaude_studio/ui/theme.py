@@ -70,24 +70,40 @@ QToolTip {{
     border-left: 3px solid {colors["accent_strong"]};
     padding: 7px 9px;
 }}
-QToolBar {{
+QToolBar#TopBar {{
     background: {colors["toolbar"]};
     border: none;
-    spacing: 6px;
-    padding: 10px 12px;
+    border-bottom: 1px solid {colors["panel_border"]};
+    spacing: 8px;
+    padding: 10px 14px;
 }}
-QToolBar QToolButton {{
+QToolBar#TopBar QToolButton {{
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 12px;
-    padding: 8px 12px;
+    border-radius: 11px;
+    padding: 7px 12px;
     color: {colors["muted"]};
-    font-size: 9pt;
+    font-size: 8.7pt;
+    min-height: 18px;
 }}
-QToolBar QToolButton:hover {{
+QToolBar#TopBar QToolButton:hover {{
     background: {colors["hover"]};
     border: 1px solid {colors["panel_border"]};
     color: {colors["text"]};
+}}
+QToolBar#TopBar QToolButton:pressed {{
+    background: {colors["selected"]};
+}}
+QToolBar#TopBar QToolButton[accent="true"] {{
+    background: {colors["surface_alt"]};
+    border: 1px solid {colors["panel_border"]};
+    color: {colors["text"]};
+    font-weight: 600;
+}}
+QToolBar#TopBar QToolButton::menu-indicator {{
+    width: 12px;
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
 }}
 QFrame#Sidebar, QFrame#EventsPanel, QFrame#ComposerCard, QFrame#HeaderCard, QFrame#PermissionCard {{
     background: {colors["surface"]};
